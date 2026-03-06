@@ -605,6 +605,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
       if (!form.date) return showToast("날짜를 선택해주세요.", "error");
     }
     if (!form.reason.trim()) return showToast("사유를 입력해주세요.", "error");
+    // 과거 날짜 제한 없음
 
     // compute requested cost
     return (
