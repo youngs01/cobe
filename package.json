@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    
+    "@prisma/client": "^4.16.0",
     "jspdf": "^4.2.0",
     "next": "^13.5.4",
     "react": "^18.2.0",
@@ -12,13 +12,17 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "prisma": "^4.16.0"
   },
-  
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma db push --skip-generate && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "prisma generate"
   },
   "eslintConfig": {
     "extends": [

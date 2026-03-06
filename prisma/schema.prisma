@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  loginId      String    @unique
+  password     String
+  name         String
+  role         String
+  hireDate     DateTime
+  classRoom    String?
+  active       Boolean   @default(true)
+  manualRemain Float?
+  requests     Request[]
+}
+
+model Request {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String
+  // legacy single date
+  date       DateTime?
+  // range support
+  startDate  DateTime?
+  endDate    DateTime?
+  // half-day: 'AM' or 'PM'
+  halfDay    String?
+  reason     String
+  status     String
+  createdAt  DateTime  @default(now())
+  approvedBy String?
+  approvedAt DateTime?
+  user       User      @relation(fields: [userId], references: [id])
+}
