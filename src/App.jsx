@@ -753,7 +753,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
                     type="date"
                     style={styles.input}
                     value={form.startDate ? form.startDate.toISOString().slice(0, 10) : ""}
-                    min={new Date().toISOString().slice(0, 10)}
+                    // min removed to allow past dates
                     onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value ? new Date(e.target.value) : null }))}
                   />
                   {form.startDate && (() => {
@@ -771,7 +771,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
                     type="date"
                     style={styles.input}
                     value={form.endDate ? form.endDate.toISOString().slice(0, 10) : ""}
-                    min={form.startDate ? form.startDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)}
+                    // min removed to allow past dates
                     onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value ? new Date(e.target.value) : null }))}
                   />
                   {form.endDate && (() => {
@@ -793,7 +793,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
                   type="date"
                   style={styles.input}
                   value={form.date ? form.date.toISOString().slice(0, 10) : ""}
-                  min={new Date().toISOString().slice(0, 10)}
+                  // min removed to allow past dates
                   onChange={(e) => setForm((f) => ({ ...f, date: e.target.value ? new Date(e.target.value) : null }))}
                 />
                 {form.date && (() => {
