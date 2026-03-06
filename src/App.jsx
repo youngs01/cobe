@@ -1,3 +1,17 @@
+// ─── 네이버 공휴일 목록 (예시, 실제로는 매년 업데이트 필요) ────────────────
+const HOLIDAYS = [
+  "2026-01-01", // 신정
+  "2026-02-18", "2026-02-19", "2026-02-20", // 설날
+  "2026-03-01", // 삼일절
+  "2026-05-05", // 어린이날
+  "2026-05-15", // 석가탄신일
+  "2026-06-06", // 현충일
+  "2026-08-15", // 광복절
+  "2026-09-23", "2026-09-24", "2026-09-25", // 추석
+  "2026-10-03", // 개천절
+  "2026-10-09", // 한글날
+  "2026-12-25", // 성탄절
+];
 import React, { useState, useEffect } from "react";
 // import Icon from "./Icon";
 
@@ -481,7 +495,7 @@ function Dashboard({ user, myRequests, totalLeave, usedLeave, remainLeave, allRe
             </div>
             <div style={styles.leaveDivider} />
             <div style={styles.leaveStat}>
-              <span style={{ ...styles.leaveStatNum, color: "#10b981" }}>{remainLeave}</span>
+              <span style={{ ...styles.leaveStatNum, color: "#10b981" }}>{remainLeave < 0 ? `-${Math.abs(remainLeave)}일` : remainLeave}</span>
               <span style={styles.leaveStatLabel}>잔여</span>
             </div>
           </div>
@@ -558,11 +572,27 @@ function requestCost(r) {
   const start = r.startDate ? new Date(r.startDate) : (r.date ? new Date(r.date) : null);
   const end = r.endDate ? new Date(r.endDate) : (r.date ? new Date(r.date) : null);
   if (start && end) {
-    const diff = Math.round((end - start) / (24 * 3600 * 1000)) + 1;
-    return diff;
+    let count = 0;
+    let d = new Date(start);
+    while (d <= end) {
+      const info = getDayInfo(d);
+      const yyyyMMdd = d.toISOString().slice(0, 10);
+      if (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
   }
   // fallback: type-based
   if (r.type === "반차") return 0.5;
+  // 단일 날짜도 공휴일/주말 제외
+  const singleDate = r.date || r.startDate;
+  if (singleDate) {
+    const d = new Date(singleDate);
+    const info = getDayInfo(d);
+    const yyyyMMdd = d.toISOString().slice(0, 10);
+    if (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) return 1;
+    return 0;
+  }
   return 1;
 }
 
@@ -607,38 +637,13 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
     if (!form.reason.trim()) return showToast("사유를 입력해주세요.", "error");
     // 과거 날짜 제한 없음
 
-    // compute requested cost
-    return (
-      <div style={styles.pageWrap}>
-        <h2 style={styles.pageTitle}>내 연차</h2>
-        {user.role !== ROLES.DIRECTOR && (
-          <div style={styles.leaveStatsGrid}>
-            <div style={styles.leaveStatCard}>
-              <span style={styles.leaveStatNum}>{totalLeave}</span>
-              <span style={styles.leaveStatLabel}>총 연차</span>
-            </div>
-            <div style={styles.leaveStatCard}>
-              <span style={{ ...styles.leaveStatNum, color: "#f59e0b" }}>{usedLeave}</span>
-              <span style={styles.leaveStatLabel}>사용</span>
-            </div>
-            <div style={styles.leaveStatCard}>
-              <span style={{ ...styles.leaveStatNum, color: "#10b981" }}>{remainLeave}</span>
-              <span style={styles.leaveStatLabel}>잔여</span>
-            </div>
-          </div>
-        )}
-        <h3 style={styles.sectionTitle}>신청 내역</h3>
-        {requests.length === 0 ? (
-          <EmptyState msg="연차 신청 내역이 없습니다." />
-        ) : (
-          <div style={styles.requestList}>
-            {requests.map((r) => (
-              <RequestItem key={r.id} req={r} showUser={false} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
+    // 실제 leave 신청 payload 정의
+    const payload = {
+      userId: user.id,
+      type: form.type,
+      reason: form.reason,
+      status: STATUS.PENDING,
+    };
     if (form.type === "연차") {
       payload.startDate = form.startDate.toISOString().split("T")[0];
       payload.endDate = form.endDate.toISOString().split("T")[0];
@@ -721,7 +726,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
           { label: "잔여", val: remainLeave, color: "#10b981" },
         ].map((s) => (
           <div key={s.label} style={{ ...styles.miniStat, borderTop: `3px solid ${s.color}` }}>
-            <span style={{ ...styles.miniStatNum, color: s.color }}>{s.val}</span>
+            <span style={{ ...styles.miniStatNum, color: s.color }}>{s.label === "잔여" && s.val < 0 ? '-' : s.val}</span>
             <span style={styles.miniStatLabel}>{s.label}</span>
           </div>
         ))}
@@ -1129,7 +1134,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
                     </div>
                     {/* 잔여 연차 크게 */}
                     <div style={styles.remainBadge}>
-                      <span style={styles.remainBadgeNum}>{u.remain}</span>
+                      <span style={styles.remainBadgeNum}>{u.remain < 0 ? `-${Math.abs(u.remain)}일` : u.remain}</span>
                       <span style={styles.remainBadgeLabel}>잔여</span>
                     </div>
                   </div>
@@ -1147,7 +1152,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
                       {u.pending > 0 && (
                         <span style={{ color: "#6366f1" }}>대기 <strong>{u.pending}</strong>일</span>
                       )}
-                      <span style={{ color: "#10b981" }}>잔여 <strong>{u.remain}</strong>일</span>
+                      <span style={{ color: "#10b981" }}>잔여 <strong>{u.remain < 0 ? `-${Math.abs(u.remain)}일` : u.remain}</strong></span>
                     </div>
                   </div>
                 </div>
