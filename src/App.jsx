@@ -864,33 +864,41 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
         {requests.length === 0 ? (
           <EmptyState msg="연차 신청 내역이 없습니다." />
         ) : (
-          [...requests].reverse().map((r) => (
-            <RequestItem
-              key={r.id}
-              req={r}
-              showUser={false}
-              actions={
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  {r.status === STATUS.PENDING && (
-                    <button
-                      style={styles.smallBtn}
-                      onClick={() => cancelReq(r.id)}
-                    >
-                      신청 취소
-                    </button>
-                  )}
-                  {r.status === STATUS.CANCELLED && (
-                    <button
-                      style={{ ...styles.smallBtn, background: "#fee2e2", color: "#ef4444" }}
-                      onClick={() => deleteReq(r.id)}
-                    >
-                      <Icon name="trash" size={14} /> 삭제
-                    </button>
-                  )}
-                </div>
-              }
-            />
-          ))
+          [...requests]
+            .sort((a, b) => {
+              // 연차: startDate, 반차/단일: date
+              const getDate = (r) => r.startDate || r.date;
+              const da = getDate(a) ? new Date(getDate(a)) : new Date(0);
+              const db = getDate(b) ? new Date(getDate(b)) : new Date(0);
+              return da - db;
+            })
+            .map((r) => (
+              <RequestItem
+                key={r.id}
+                req={r}
+                showUser={false}
+                actions={
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    {r.status === STATUS.PENDING && (
+                      <button
+                        style={styles.smallBtn}
+                        onClick={() => cancelReq(r.id)}
+                      >
+                        신청 취소
+                      </button>
+                    )}
+                    {r.status === STATUS.CANCELLED && (
+                      <button
+                        style={{ ...styles.smallBtn, background: "#fee2e2", color: "#ef4444" }}
+                        onClick={() => deleteReq(r.id)}
+                      >
+                        <Icon name="trash" size={14} /> 삭제
+                      </button>
+                    )}
+                  </div>
+                }
+              />
+            ))
         )}
       </div>
     </div>
@@ -1696,6 +1704,19 @@ function ProfilePage({ user, users, setUsers, setCurrentUser, isSuperAdmin, show
 // ─── 공통 컴포넌트 ─────────────────────────────────────────────────────────────
 
 function RequestItem({ req, showUser, userName, userRole, actions }) {
+  // 연차 사용일 텍스트 생성
+  let usedDateText = "";
+  if (req.type === "연차" && req.startDate && req.endDate) {
+    const s = new Date(req.startDate).toLocaleDateString("ko-KR");
+    const e = new Date(req.endDate).toLocaleDateString("ko-KR");
+    usedDateText = s === e ? `사용일: ${s}` : `사용일: ${s} ~ ${e}`;
+  } else if (req.type === "반차" && req.date) {
+    const d = new Date(req.date).toLocaleDateString("ko-KR");
+    usedDateText = `사용일: ${d} (${req.halfDay === 'AM' ? '오전' : '오후'} 반차)`;
+  } else if (req.date) {
+    const d = new Date(req.date).toLocaleDateString("ko-KR");
+    usedDateText = `사용일: ${d}`;
+  }
   return (
     <div style={styles.reqCard}>
       <div style={styles.reqTop}>
@@ -1726,10 +1747,7 @@ function RequestItem({ req, showUser, userName, userRole, actions }) {
       </div>
       <p style={styles.reqReason}>{req.reason}</p>
       <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-        <span>신청일: {formatDate(req.createdAt)}</span>
-        {req.approvedAt && (
-          <span style={{ marginLeft: 8 }}>처리일: {formatDate(req.approvedAt)}</span>
-        )}
+        <span>{usedDateText}</span>
       </div>
       {actions}
     </div>
