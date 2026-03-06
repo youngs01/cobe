@@ -1713,7 +1713,6 @@ function RequestItem({ req, showUser, userName, userRole, actions }) {
             </span>
           )}
           <span style={styles.reqType}>{req.type}</span>
-          <span style={styles.reqDate}>{req.date}</span>
         </div>
         <span
           style={{
@@ -1726,9 +1725,12 @@ function RequestItem({ req, showUser, userName, userRole, actions }) {
         </span>
       </div>
       <p style={styles.reqReason}>{req.reason}</p>
-      {req.approvedAt && (
-        <p style={styles.reqSub}>처리일: {req.approvedAt}</p>
-      )}
+      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+        <span>신청일: {formatDate(req.createdAt)}</span>
+        {req.approvedAt && (
+          <span style={{ marginLeft: 8 }}>처리일: {formatDate(req.approvedAt)}</span>
+        )}
+      </div>
       {actions}
     </div>
   );
