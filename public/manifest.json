@@ -1,0 +1,20 @@
+{
+  "short_name": "코코베베연차",
+  "name": "코코베베 연차 프로그램",
+  "icons": [
+    {
+      "src": "/flower-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/flower-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#f59e0b",
+  "background_color": "#ffffff"
+}
