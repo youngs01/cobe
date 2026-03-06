@@ -1318,7 +1318,14 @@ function AdminPage({ users, setUsers, showToast, refresh }) {
   const staffUsers = users.filter((u) => u.role !== ROLES.SUPER_ADMIN);
 
   // 역할별 그룹핑
-  const roleOrder = [ROLES.DIRECTOR, ROLES.TEACHER, ROLES.ASSISTANT, ROLES.EXTENDED, ROLES.NIGHT, ROLES.COOK];
+  const roleOrder = [
+    ROLES.DIRECTOR, // 원장
+    ROLES.TEACHER, // 교사
+    ROLES.ASSISTANT, // 보조교사
+    ROLES.EXTENDED, // 연장교사
+    ROLES.NIGHT, // 야간반 교사
+    ROLES.COOK // 조리사
+  ];
   const grouped = roleOrder.map((role) => ({
     role,
     members: staffUsers.filter((u) => u.role === role),
