@@ -1066,17 +1066,34 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
   const getUserName = (uid) => users.find((u) => u.id === uid)?.name || uid;
   const getUserRole = (uid) => users.find((u) => u.id === uid)?.role;
 
-  // 직원별 연차 현황 계산
+  // 직원별 연차 현황 계산 및 역할별 정렬
   const staffUsers = users.filter(
     (u) => u.role !== ROLES.SUPER_ADMIN && u.active
   );
-  const staffLeaveStats = staffUsers.map((u) => {
-    const total = calcAnnualLeave(u.hireDate);
-    const used = requests.filter((r) => r.userId === u.id && r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
-    const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-    const remain = (typeof u.manualRemain === "number" && u.manualRemain !== null) ? u.manualRemain - used : total - used;
-    return { ...u, total, used, pending, remain };
-  });
+  const roleOrder = [
+    ROLES.DIRECTOR, // 원장
+    ROLES.TEACHER, // 교사
+    ROLES.ASSISTANT, // 보조교사
+    ROLES.EXTENDED, // 연장교사
+    ROLES.NIGHT, // 야간반 교사
+    ROLES.COOK // 조리사
+  ];
+  const roleOrderMap = Object.fromEntries(roleOrder.map((role, idx) => [role, idx]));
+  const staffLeaveStats = staffUsers
+    .map((u) => {
+      const total = calcAnnualLeave(u.hireDate);
+      const used = requests.filter((r) => r.userId === u.id && r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
+      const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
+      const remain = (typeof u.manualRemain === "number" && u.manualRemain !== null) ? u.manualRemain - used : total - used;
+      return { ...u, total, used, pending, remain };
+    })
+    .sort((a, b) => {
+      const aIdx = roleOrderMap[a.role] ?? 99;
+      const bIdx = roleOrderMap[b.role] ?? 99;
+      if (aIdx !== bIdx) return aIdx - bIdx;
+      // Same role: sort by name
+      return a.name.localeCompare(b.name, "ko");
+    });
 
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
 

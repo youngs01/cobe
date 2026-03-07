@@ -90,6 +90,7 @@ export default async function handler(req, res) {
           const total = calcAnnualLeave(u.hireDate);
           const used = usedMap[u.id] || 0;
           const remain = total - used;
+          // Only update manualRemain, do not overwrite any other fields
           const up = await prisma.user.update({ where: { id: u.id }, data: { manualRemain: remain } });
           updated.push(up);
         }
