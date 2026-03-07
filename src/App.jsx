@@ -218,15 +218,29 @@ export default function App() {
   };
 
   const handleLogin = () => {
-    // compare against loginId field from database, not the internal UUID `id`
-    const u = users.find((u) => u.loginId === loginId && u.pw === loginPw && u.active);
-    if (u) {
-      setCurrentUser(u);
-      setLoginError("");
-      setPage("dashboard");
-    } else {
-      setLoginError("아이디 또는 비밀번호가 올바르지 않습니다.");
-    }
+    // 서버에서 bcrypt로 검증
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loginId, password: loginPw }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          setLoginError("아이디 또는 비밀번호가 올바르지 않습니다.");
+          return;
+        }
+        const user = await res.json();
+        if (!user.active) {
+          setLoginError("비활성화된 계정입니다.");
+          return;
+        }
+        setCurrentUser(user);
+        setLoginError("");
+        setPage("dashboard");
+      })
+      .catch(() => {
+        setLoginError("로그인 오류가 발생했습니다.");
+      });
   };
 
   const handleLogout = () => {
