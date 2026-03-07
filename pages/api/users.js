@@ -1,4 +1,5 @@
 import prisma from "../../lib/prisma";
+import bcrypt from "bcryptjs";
 
 export default async function handler(req, res) {
   try {
@@ -21,9 +22,9 @@ export default async function handler(req, res) {
     } else if (req.method === "POST") {
       const data = { ...req.body };
       
-      // pw → password 변환
+      // pw → password 변환 및 해시
       if (data.pw !== undefined) {
-        data.password = data.pw;
+        data.password = await bcrypt.hash(data.pw, 10);
         delete data.pw;
       }
       
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
       }
       
       const user = await prisma.user.create({ data });
-      res.status(201).json({ ...user, pw: user.password });
+      res.status(201).json({ ...user });
     } else if (req.method === "DELETE") {
       const { id } = req.query;
       await prisma.user.delete({ where: { id } });
@@ -47,13 +48,17 @@ export default async function handler(req, res) {
       // update a single user (e.g. manualRemain)
       const { id } = req.query;
       const updates = { ...req.body };
+      // password 해시
+      if (updates.password) {
+        updates.password = await bcrypt.hash(updates.password, 10);
+      }
       // if client sends manualRemain as string, convert to number
       if (updates.manualRemain !== undefined && updates.manualRemain !== null) {
         const v = parseFloat(updates.manualRemain);
         updates.manualRemain = Number.isFinite(v) ? v : null;
       }
       const u = await prisma.user.update({ where: { id }, data: updates });
-      res.status(200).json({ ...u, pw: u.password });
+      res.status(200).json({ ...u });
     } else if (req.method === "PUT") {
       // bulk operations. currently supports { action: 'applySystem' }
       const body = req.body || {};
