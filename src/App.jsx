@@ -929,7 +929,7 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
               const getDate = (r) => r.startDate || r.date;
               const da = getDate(a) ? new Date(getDate(a)) : new Date(0);
               const db = getDate(b) ? new Date(getDate(b)) : new Date(0);
-              return da - db;
+              return db - da; // 최신(빠른) 날짜가 위로, 오래된 날짜가 아래로
             })
             .map((r) => (
               <div key={r.id} onClick={() => setDetailReq(r)} style={{ cursor: "pointer" }}>
