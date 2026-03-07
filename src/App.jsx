@@ -622,9 +622,25 @@ function getDayInfo(date) {
 // ─── 내 연차 ──────────────────────────────────────────────────────────────────
 
 function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setRequests, allRequests, showToast }) {
+    // 로딩/에러 상태
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    // 데이터 새로고침 시 로딩/에러 처리 예시 (refresh 함수 등에서 활용)
+    // useEffect(() => {
+    //   setLoading(true);
+    //   fetchData()
+    //     .catch(e => setError('데이터를 불러오지 못했습니다.'))
+    //     .finally(() => setLoading(false));
+    // }, []);
+  // 상세 모달 상태
+  const [detailReq, setDetailReq] = useState(null);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: "연차", startDate: null, endDate: null, date: null, halfDay: "AM", reason: "" });
+  // 상태별 필터
+  const STATUS_LABELS = ["전체", STATUS.APPROVED, STATUS.PENDING, STATUS.REJECTED, STATUS.CANCELLED];
+  const [statusFilter, setStatusFilter] = useState("전체");
 
   const submitLeave = async () => {
     // validate
@@ -718,18 +734,30 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
         </button>
       </div>
 
-      {/* 연차 요약 */}
-      <div style={styles.miniStats}>
-        {[
-          { label: "총 연차", val: totalLeave, color: "#6366f1" },
-          { label: "사용", val: usedLeave, color: "#f59e0b" },
-          { label: "잔여", val: remainLeave, color: "#10b981" },
-        ].map((s) => (
-          <div key={s.label} style={{ ...styles.miniStat, borderTop: `3px solid ${s.color}` }}>
-            <span style={{ ...styles.miniStatNum, color: s.color }}>{s.label === "잔여" && s.val < 0 ? '-' : s.val}</span>
-            <span style={styles.miniStatLabel}>{s.label}</span>
-          </div>
-        ))}
+      {/* 연차 요약 - 상단 고정 */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 10, background: "#f9fafb", paddingTop: 8, paddingBottom: 8, marginBottom: 16,
+        borderBottom: "1px solid #e5e7eb"
+      }}>
+        <div style={styles.miniStats}>
+          {[
+            { label: "총 연차", val: totalLeave, color: "#6366f1" },
+            { label: "사용", val: usedLeave, color: "#f59e0b" },
+            { label: "잔여", val: remainLeave, color: "#10b981" },
+          ].map((s) => {
+            let displayVal = s.val;
+            if (s.label === "잔여") {
+              if (typeof s.val !== "number" || isNaN(s.val)) displayVal = 0;
+              else displayVal = s.val;
+            }
+            return (
+              <div key={s.label} style={{ ...styles.miniStat, borderTop: `3px solid ${s.color}` }}>
+                <span style={{ ...styles.miniStatNum, color: s.color }}>{displayVal}</span>
+                <span style={styles.miniStatLabel}>{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* 신청 폼 */}
@@ -858,13 +886,44 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
         </div>
       )}
 
-      {/* 목록 */}
+      {/* 목록 + 상태별 필터 + 로딩/에러 처리 */}
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>신청 내역</h3>
-        {requests.length === 0 ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {/* 상태별 필터 */}
+          {STATUS_LABELS.map((s) => (
+            <button
+              key={s}
+              style={{
+                padding: "4px 12px",
+                borderRadius: 16,
+                border: "none",
+                background: statusFilter === s ? "#6366f1" : "#f3f4f6",
+                color: statusFilter === s ? "white" : "#374151",
+                fontWeight: statusFilter === s ? 700 : 400,
+                cursor: "pointer",
+                fontSize: 13,
+                transition: "all 0.15s"
+              }}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 32 }}>
+            <div style={{ display: "inline-block", width: 32, height: 32, border: "4px solid #e5e7eb", borderTop: "4px solid #6366f1", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+            <div style={{ marginTop: 12, color: "#6b7280" }}>로딩 중...</div>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: "center", color: "#ef4444", padding: 32 }}>{error}</div>
+        ) : requests.length === 0 ? (
           <EmptyState msg="연차 신청 내역이 없습니다." />
         ) : (
           [...requests]
+            .filter(r => statusFilter === "전체" ? true : r.status === statusFilter)
             .sort((a, b) => {
               // 연차: startDate, 반차/단일: date
               const getDate = (r) => r.startDate || r.date;
@@ -873,33 +932,66 @@ function MyLeave({ user, requests, totalLeave, usedLeave, remainLeave, setReques
               return da - db;
             })
             .map((r) => (
-              <RequestItem
-                key={r.id}
-                req={r}
-                showUser={false}
-                actions={
-                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                    {r.status === STATUS.PENDING && (
-                      <button
-                        style={styles.smallBtn}
-                        onClick={() => cancelReq(r.id)}
-                      >
-                        신청 취소
-                      </button>
-                    )}
-                    {r.status === STATUS.CANCELLED && (
-                      <button
-                        style={{ ...styles.smallBtn, background: "#fee2e2", color: "#ef4444" }}
-                        onClick={() => deleteReq(r.id)}
-                      >
-                        <Icon name="trash" size={14} /> 삭제
-                      </button>
-                    )}
-                  </div>
-                }
-              />
+              <div key={r.id} onClick={() => setDetailReq(r)} style={{ cursor: "pointer" }}>
+                <RequestItem
+                  req={r}
+                  showUser={false}
+                  actions={
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                      {r.status === STATUS.PENDING && (
+                        <button
+                          style={styles.smallBtn}
+                          onClick={() => cancelReq(r.id)}
+                        >
+                          신청 취소
+                        </button>
+                      )}
+                      {r.status === STATUS.CANCELLED && (
+                        <button
+                          style={{ ...styles.smallBtn, background: "#fee2e2", color: "#ef4444" }}
+                          onClick={() => deleteReq(r.id)}
+                        >
+                          <Icon name="trash" size={14} /> 삭제
+                        </button>
+                      )}
+                    </div>
+                  }
+                />
+              </div>
             ))
         )}
+      {/* 상세 모달 */}
+      {detailReq && (
+        <div style={{
+          position: "fixed", left: 0, top: 0, width: "100vw", height: "100vh", zIndex: 1000,
+          background: "rgba(0,0,0,0.25)", display: "flex", alignItems: "center", justifyContent: "center"
+        }} onClick={() => setDetailReq(null)}>
+          <div style={{ background: "white", borderRadius: 12, minWidth: 320, maxWidth: 400, padding: 28, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>연차 신청 상세</h3>
+            <div style={{ fontSize: 15, marginBottom: 8 }}><b>종류:</b> {detailReq.type}</div>
+            <div style={{ fontSize: 15, marginBottom: 8 }}><b>사용일:</b> {(() => {
+              if (detailReq.type === "연차" && detailReq.startDate && detailReq.endDate) {
+                const s = new Date(detailReq.startDate).toLocaleDateString("ko-KR");
+                const e = new Date(detailReq.endDate).toLocaleDateString("ko-KR");
+                return s === e ? s : `${s} ~ ${e}`;
+              } else if (detailReq.type === "반차" && detailReq.date) {
+                const d = new Date(detailReq.date).toLocaleDateString("ko-KR");
+                return `${d} (${detailReq.halfDay === 'AM' ? '오전' : '오후'} 반차)`;
+              } else if (detailReq.date) {
+                return new Date(detailReq.date).toLocaleDateString("ko-KR");
+              }
+              return "-";
+            })()}</div>
+            <div style={{ fontSize: 15, marginBottom: 8 }}><b>사유:</b> {detailReq.reason}</div>
+            <div style={{ fontSize: 15, marginBottom: 8 }}><b>상태:</b> {detailReq.status}</div>
+            <div style={{ fontSize: 15, marginBottom: 8 }}><b>신청일:</b> {detailReq.createdAt ? new Date(detailReq.createdAt).toLocaleDateString("ko-KR") : "-"}</div>
+            {detailReq.approvedAt && (
+              <div style={{ fontSize: 15, marginBottom: 8 }}><b>처리일:</b> {new Date(detailReq.approvedAt).toLocaleDateString("ko-KR")}</div>
+            )}
+            <button style={{ ...styles.primaryBtn, width: "100%", marginTop: 18 }} onClick={() => setDetailReq(null)}>닫기</button>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
