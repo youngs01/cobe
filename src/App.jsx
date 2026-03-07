@@ -1718,18 +1718,26 @@ function ProfilePage({ user, users, setUsers, setCurrentUser, isSuperAdmin, show
   const [newPw, setNewPw] = useState("");
   const [classRoom, setClassRoom] = useState(user.classRoom);
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (pw && pw !== user.pw) return showToast("현재 비밀번호가 틀립니다.", "error");
-    const updated = {
-      ...user,
-      pw: newPw || user.pw,
-      classRoom: isSuperAdmin ? user.classRoom : classRoom,
-    };
-    setUsers((prev) => prev.map((u) => u.id === user.id ? updated : u));
-    setCurrentUser(updated);
-    setPw("");
-    setNewPw("");
-    showToast("저장되었습니다.");
+    try {
+      const payload = {
+        classRoom: isSuperAdmin ? user.classRoom : classRoom,
+      };
+      if (newPw) payload.password = newPw;
+      const res = await fetch(`/api/users?id=${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('update failed');
+      await refresh();
+      setPw("");
+      setNewPw("");
+      showToast("저장되었습니다.");
+    } catch (e) {
+      showToast("정보 저장 실패", "error");
+    }
   };
 
   const totalLeave = calcAnnualLeave(user.hireDate);
