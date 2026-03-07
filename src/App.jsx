@@ -1731,6 +1731,7 @@ function ProfilePage({ user, users, setUsers, setCurrentUser, isSuperAdmin, show
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('update failed');
+      try { await res.json(); } catch (e) { /* ignore parse errors */ }
       await refresh();
       setPw("");
       setNewPw("");
