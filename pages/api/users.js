@@ -53,7 +53,7 @@ export default async function handler(req, res) {
         updates.manualRemain = Number.isFinite(v) ? v : null;
       }
       const u = await prisma.user.update({ where: { id }, data: updates });
-      res.status(200).json(u);
+      res.status(200).json({ ...u, pw: u.password });
     } else if (req.method === "PUT") {
       // bulk operations. currently supports { action: 'applySystem' }
       const body = req.body || {};
