@@ -18,7 +18,8 @@ export default async function handler(req, res) {
         });
         users = await prisma.user.findMany();
       }
-      res.status(200).json(users.map((u) => ({ ...u, pw: u.password })));
+      // 비밀번호 응답에서 제거
+      res.status(200).json(users.map(({ password, ...u }) => u));
     } else if (req.method === "POST") {
       const data = { ...req.body };
       
@@ -33,10 +34,6 @@ export default async function handler(req, res) {
         data.hireDate = new Date(data.hireDate);
       }
       
-      // 필수 필드 검증
-      if (!data.loginId || !data.password || !data.name || !data.role || !data.hireDate) {
-        return res.status(400).json({ error: "Missing required fields" });
-      }
       
       const user = await prisma.user.create({ data });
       res.status(201).json({ ...user });

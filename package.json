@@ -13,6 +13,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "eslint": "^10.0.3",
     "prisma": "^4.16.0"
   },
   "prisma": {

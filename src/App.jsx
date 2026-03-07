@@ -1733,7 +1733,6 @@ function ProfilePage({ user, users, setUsers, setCurrentUser, isSuperAdmin, show
   const [classRoom, setClassRoom] = useState(user.classRoom);
 
   const saveProfile = async () => {
-    if (pw && pw !== user.pw) return showToast("현재 비밀번호가 틀립니다.", "error");
     try {
       const payload = {
         classRoom: isSuperAdmin ? user.classRoom : classRoom,
