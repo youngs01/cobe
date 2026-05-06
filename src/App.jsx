@@ -4,11 +4,15 @@ const HOLIDAYS = [
   "2026-02-18", "2026-02-19", "2026-02-20", // 설날
   "2026-03-01", // 삼일절
   "2026-05-05", // 어린이날
-  "2026-05-15", // 석가탄신일
+  "2026-05-25", // 석가탄신일 대체 휴일
+  "2026-06-03", // 지방선거
   "2026-06-06", // 현충일
+  "2026-07-17", // 제헌절
   "2026-08-15", // 광복절
-  "2026-09-23", "2026-09-24", "2026-09-25", // 추석
+  "2026-08-17", // 광복절 대체 휴일
+  "2026-09-24", "2026-09-25", "2026-09-26", // 추석
   "2026-10-03", // 개천절
+  "2026-10-05", // 개천절 대체 휴일
   "2026-10-09", // 한글날
   "2026-12-25", // 성탄절
 ];
@@ -271,9 +275,7 @@ export default function App() {
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
   const usedLeave = myRequests.filter((r) => r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
-  const remainLeave = (typeof currentUser.manualRemain === "number" && Number.isFinite(currentUser.manualRemain))
-    ? currentUser.manualRemain
-    : totalLeave - usedLeave;
+  const remainLeave = totalLeave - usedLeave;
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
@@ -1098,7 +1100,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
       const total = calcAnnualLeave(u.hireDate);
       const used = requests.filter((r) => r.userId === u.id && r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-      const remain = (typeof u.manualRemain === "number" && Number.isFinite(u.manualRemain)) ? u.manualRemain : total - used;
+      const remain = total - used;
       return { ...u, total, used, pending, remain };
     })
     .sort((a, b) => {
