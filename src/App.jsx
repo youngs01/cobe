@@ -271,8 +271,8 @@ export default function App() {
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
   const usedLeave = myRequests.filter((r) => r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
-  const remainLeave = (typeof currentUser.manualRemain === "number" && currentUser.manualRemain !== null)
-    ? currentUser.manualRemain - usedLeave
+  const remainLeave = (typeof currentUser.manualRemain === "number" && Number.isFinite(currentUser.manualRemain))
+    ? currentUser.manualRemain
     : totalLeave - usedLeave;
 
   const navItems = [
@@ -1098,7 +1098,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
       const total = calcAnnualLeave(u.hireDate);
       const used = requests.filter((r) => r.userId === u.id && r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-      const remain = (typeof u.manualRemain === "number" && u.manualRemain !== null) ? u.manualRemain - used : total - used;
+      const remain = (typeof u.manualRemain === "number" && Number.isFinite(u.manualRemain)) ? u.manualRemain : total - used;
       return { ...u, total, used, pending, remain };
     })
     .sort((a, b) => {
