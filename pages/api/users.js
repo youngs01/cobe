@@ -45,6 +45,48 @@ function requestCost(r) {
   return 1;
 }
 
+function calcRemainingLeaveWithCarryover(requests, hireDate) {
+  const hire = new Date(hireDate);
+  const currentYear = hire.getFullYear() + Math.floor((new Date().getFullYear() - hire.getFullYear()));
+  const lastYear = currentYear - 1;
+  
+  // 작년 총 연차 계산
+  const lastYearHire = new Date(hire);
+  lastYearHire.setFullYear(lastYear);
+  const lastYearTotal = calcAnnualLeave(lastYearHire);
+  
+  // 작년 사용 연차
+  const lastYearUsed = requests
+    .filter((r) => r.status === "승인")
+    .filter((r) => {
+      const reqDate = r.date || r.startDate;
+      if (!reqDate) return false;
+      const reqYear = new Date(reqDate).getFullYear();
+      return reqYear === lastYear;
+    })
+    .reduce((acc, r) => acc + requestCost(r), 0);
+    
+  // 작년 남은 연차 (이월될 값)
+  const lastYearRemain = lastYearTotal - lastYearUsed;
+  
+  // 올해 총 연차 + 작년 이월
+  const currentYearTotal = calcAnnualLeave(hireDate);
+  const adjustedTotal = currentYearTotal + lastYearRemain;
+  
+  // 올해 사용 연차
+  const currentYearUsed = requests
+    .filter((r) => r.status === "승인")
+    .filter((r) => {
+      const reqDate = r.date || r.startDate;
+      if (!reqDate) return false;
+      const reqYear = new Date(reqDate).getFullYear();
+      return reqYear === currentYear;
+    })
+    .reduce((acc, r) => acc + requestCost(r), 0);
+    
+  return Math.max(0, adjustedTotal - currentYearUsed);
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
@@ -83,6 +125,8 @@ export default async function handler(req, res) {
       res.status(201).json({ ...user });
     } else if (req.method === "DELETE") {
       const { id } = req.query;
+      // First delete all requests for this user, then delete the user
+      await prisma.request.deleteMany({ where: { userId: id } });
       await prisma.user.delete({ where: { id } });
       res.status(204).end();
     } else if (req.method === "PATCH") {
@@ -123,20 +167,12 @@ export default async function handler(req, res) {
 
         const staff = await prisma.user.findMany({ where: { role: { not: "최종관리자" }, active: true } });
         const allRequests = await prisma.request.findMany({ where: { status: "승인" } });
-        // build map of used per user
-        const usedMap = {};
-        for (const r of allRequests) {
-          const cost = requestCost(r);
-          usedMap[r.userId] = (usedMap[r.userId] || 0) + cost;
-        }
-
-        // update each staff user's manualRemain to total - used
+        // calculate remaining leave with carryover for each user
         const updated = [];
         for (const u of staff) {
-          const total = calcAnnualLeave(u.hireDate);
-          const used = usedMap[u.id] || 0;
-          const remain = total - used;
-          // Only update manualRemain, do not overwrite any other fields
+          const userRequests = allRequests.filter(r => r.userId === u.id);
+          const remain = calcRemainingLeaveWithCarryover(userRequests, u.hireDate);
+          // Update manualRemain to current remaining leave
           const up = await prisma.user.update({ where: { id: u.id }, data: { manualRemain: remain } });
           updated.push(up);
         }
