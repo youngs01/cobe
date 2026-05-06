@@ -1,6 +1,50 @@
 import prisma from "../../lib/prisma";
 import bcrypt from "bcryptjs";
 
+const HOLIDAYS = [
+  "2026-01-01",
+  "2026-02-18", "2026-02-19", "2026-02-20",
+  "2026-03-01",
+  "2026-05-05",
+  "2026-05-15",
+  "2026-06-06",
+  "2026-08-15",
+  "2026-09-23", "2026-09-24", "2026-09-25",
+  "2026-10-03",
+  "2026-10-09",
+  "2026-12-25",
+];
+
+function getDayInfo(date) {
+  const day = new Date(date).getDay();
+  return { isWeekend: day === 0 || day === 6 };
+}
+
+function requestCost(r) {
+  if (r.halfDay) return 0.5;
+  const start = r.startDate ? new Date(r.startDate) : (r.date ? new Date(r.date) : null);
+  const end = r.endDate ? new Date(r.endDate) : (r.date ? new Date(r.date) : null);
+  if (start && end) {
+    let count = 0;
+    let d = new Date(start);
+    while (d <= end) {
+      const yyyyMMdd = d.toISOString().slice(0, 10);
+      const info = getDayInfo(d);
+      if (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+  const singleDate = r.date || r.startDate;
+  if (singleDate) {
+    const d = new Date(singleDate);
+    const yyyyMMdd = d.toISOString().slice(0, 10);
+    const info = getDayInfo(d);
+    return (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) ? 1 : 0;
+  }
+  return 1;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
@@ -82,7 +126,7 @@ export default async function handler(req, res) {
         // build map of used per user
         const usedMap = {};
         for (const r of allRequests) {
-          const cost = r.type === "반차" ? 0.5 : 1;
+          const cost = requestCost(r);
           usedMap[r.userId] = (usedMap[r.userId] || 0) + cost;
         }
 
