@@ -1,9 +1,26 @@
 import prisma from "../../lib/prisma";
 
-let SERVER_HOLIDAYS = [];
-function getServerHolidays(year) {
-  const prefix = String(year) + "-";
-  return SERVER_HOLIDAYS.filter((d) => d.startsWith(prefix));
+async function getHolidaySet(prismaClient, years = []) {
+  const uniqueYears = Array.from(new Set(years.filter(Boolean)));
+  if (uniqueYears.length === 0) return new Set();
+
+  try {
+    const start = new Date(`${uniqueYears[0]}-01-01`);
+    const end = new Date(`${uniqueYears[uniqueYears.length - 1]}-12-31`);
+    const dbHolidays = await prismaClient.holiday.findMany({
+      where: {
+        date: {
+          gte: start,
+          lte: end,
+        },
+      },
+      select: { date: true },
+    });
+    return new Set(dbHolidays.map((h) => h.date.toISOString().slice(0, 10)));
+  } catch (error) {
+    console.warn("[holiday lookup] failed", error.message);
+    return new Set();
+  }
 }
 
 function getDayInfo(date) {
@@ -11,17 +28,25 @@ function getDayInfo(date) {
   return { isWeekend: day === 0 || day === 6 };
 }
 
-function requestCost(r, holidays = []) {
+async function requestCost(r, prismaClient) {
   if (r.halfDay) return 0.5;
   const start = r.startDate ? new Date(r.startDate) : (r.date ? new Date(r.date) : null);
   const end = r.endDate ? new Date(r.endDate) : (r.date ? new Date(r.date) : null);
+
+  const years = [];
+  if (start) years.push(start.getFullYear());
+  if (end) years.push(end.getFullYear());
+  if (r.date || r.startDate) years.push(new Date(r.date || r.startDate).getFullYear());
+
+  const holidays = await getHolidaySet(prismaClient, years);
+
   if (start && end) {
     let count = 0;
     let d = new Date(start);
     while (d <= end) {
       const yyyyMMdd = d.toISOString().slice(0, 10);
       const info = getDayInfo(d);
-      if (!info.isWeekend && !holidays.includes(yyyyMMdd)) count++;
+      if (!info.isWeekend && !holidays.has(yyyyMMdd)) count++;
       d.setDate(d.getDate() + 1);
     }
     return count;
@@ -31,7 +56,7 @@ function requestCost(r, holidays = []) {
     const d = new Date(singleDate);
     const yyyyMMdd = d.toISOString().slice(0, 10);
     const info = getDayInfo(d);
-    return !info.isWeekend && !holidays.includes(yyyyMMdd) ? 1 : 0;
+    return !info.isWeekend && !holidays.has(yyyyMMdd) ? 1 : 0;
   }
   return 1;
 }
@@ -80,46 +105,50 @@ function isRequestInRange(r, start, end) {
   return d >= start && d < end;
 }
 
-function calcApprovedLeaveForLeaveYear(requests, hireDate, refDate = new Date()) {
+async function calcApprovedLeaveForLeaveYear(requests, hireDate, refDate = new Date(), prismaClient) {
   const { currentStart, nextStart } = getLeaveYearRanges(hireDate, refDate);
-  const holidays = getServerHolidays(currentStart.getFullYear());
-  return requests
-    .filter((r) => r.status === "승인")
-    .filter((r) => isRequestInRange(r, currentStart, nextStart))
-    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+  let totalCost = 0;
+  for (const r of requests) {
+    if (r.status === "승인" && isRequestInRange(r, currentStart, nextStart)) {
+      totalCost += await requestCost(r, prismaClient);
+    }
+  }
+  return totalCost;
 }
 
-function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new Date()) {
+async function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new Date(), prismaClient) {
   const { lastStart, currentStart } = getLeaveYearRanges(hireDate, refDate);
-  const holidays = getServerHolidays(lastStart.getFullYear());
-  return requests
-    .filter((r) => r.status === "승인")
-    .filter((r) => isRequestInRange(r, lastStart, currentStart))
-    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+  let totalCost = 0;
+  for (const r of requests) {
+    if (r.status === "승인" && isRequestInRange(r, lastStart, currentStart)) {
+      totalCost += await requestCost(r, prismaClient);
+    }
+  }
+  return totalCost;
 }
 
-function calcRemainingLeaveWithCarryover(requests, hireDate) {
+async function calcRemainingLeaveWithCarryover(requests, hireDate, prismaClient) {
   const { lastStart, currentStart } = getLeaveYearRanges(hireDate, new Date());
   const lastYearTotal = calcAnnualLeave(hireDate, lastStart);
-  const lastYearUsed = calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date());
+  const lastYearUsed = await calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date(), prismaClient);
   const lastYearRemain = lastYearTotal - lastYearUsed;
   const currentYearTotal = calcAnnualLeave(hireDate, currentStart);
   const adjustedTotal = currentYearTotal + lastYearRemain;
-  const currentYearUsed = calcApprovedLeaveForLeaveYear(requests, hireDate, new Date());
+  const currentYearUsed = await calcApprovedLeaveForLeaveYear(requests, hireDate, new Date(), prismaClient);
   return Math.max(0, adjustedTotal - currentYearUsed);
 }
 
-async function syncUserRemainingLeave(userId) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+async function syncUserRemainingLeave(userId, prismaClient) {
+  const user = await prismaClient.user.findUnique({ where: { id: userId } });
   if (!user) return null;
 
-  const requests = await prisma.request.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
+  const requests = await prismaClient.request.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
   const approvedRequests = requests.filter((r) => r.status === "승인");
-  const newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
+  const newRemain = await calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate, prismaClient);
 
   console.log("[syncUserRemainingLeave]", { userId, existingManualRemain: user.manualRemain, newRemain, approvedCount: approvedRequests.length });
 
-  await prisma.user.update({
+  await prismaClient.user.update({
     where: { id: user.id },
     data: { manualRemain: newRemain },
   });
@@ -129,13 +158,6 @@ async function syncUserRemainingLeave(userId) {
 
 export default async function handler(req, res) {
   try {
-    try {
-      const items = await prisma.holiday.findMany();
-      SERVER_HOLIDAYS = items.map((h) => h.date.toISOString().slice(0, 10));
-    } catch (e) {
-      SERVER_HOLIDAYS = [];
-    }
-
     if (req.method === "GET") {
       const calls = await prisma.request.findMany();
       res.status(200).json(calls);
@@ -169,7 +191,7 @@ export default async function handler(req, res) {
       console.log("[/api/requests POST] final data:", JSON.stringify(data, null, 2));
       try {
         const r = await prisma.request.create({ data });
-        await syncUserRemainingLeave(userId);
+        await syncUserRemainingLeave(userId, prisma);
         console.log("[/api/requests POST] created:", r);
         res.status(201).json(r);
       } catch (createErr) {
@@ -192,7 +214,7 @@ export default async function handler(req, res) {
 
       console.log("[/api/requests PATCH] status transition", { id, oldStatus, newStatus, statusChanged });
       const r = await prisma.request.update({ where: { id }, data: updates });
-      await syncUserRemainingLeave(oldReq.userId);
+      await syncUserRemainingLeave(oldReq.userId, prisma);
 
       res.status(200).json(r);
     } else if (req.method === "DELETE") {
@@ -200,7 +222,7 @@ export default async function handler(req, res) {
       const existing = await prisma.request.findUnique({ where: { id } });
       await prisma.request.delete({ where: { id } });
       if (existing) {
-        await syncUserRemainingLeave(existing.userId);
+        await syncUserRemainingLeave(existing.userId, prisma);
       }
       res.status(204).end();
     } else {
