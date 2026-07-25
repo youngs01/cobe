@@ -107,8 +107,7 @@ function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new
 
 function calcEffectiveRemainingLeave(requests, hireDate, manualRemain) {
   if (manualRemain !== undefined && manualRemain !== null) {
-    const approvedUsed = calcApprovedLeaveForLeaveYear(requests, hireDate);
-    return Math.max(0, Number(manualRemain) - approvedUsed);
+    return Math.max(0, Number(manualRemain));
   }
   return calcRemainingLeaveWithCarryover(requests, hireDate);
 }
