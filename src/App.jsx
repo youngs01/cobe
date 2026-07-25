@@ -118,6 +118,18 @@ function calcRemainingLeaveWithCarryover(requests, hireDate) {
   return Math.max(0, adjustedTotal - currentYearUsed);
 }
 
+function calcApprovedLeaveForYear(requests, year) {
+  return requests
+    .filter((r) => r.status === STATUS.APPROVED)
+    .filter((r) => {
+      const reqDate = r.date || r.startDate;
+      if (!reqDate) return false;
+      const reqYear = new Date(reqDate).getFullYear();
+      return reqYear === year;
+    })
+    .reduce((acc, r) => acc + requestCost(r), 0);
+}
+
 // 데이터는 더 이상 클라이언트에 하드코딩하지 않습니다.
 // 실제 운영 시에는 백엔드 API와 데이터베이스(Prisma/Neon 등)로부터
 // 사용자 및 연차 요청을 가져오고 저장해야 합니다.
@@ -318,7 +330,7 @@ export default function App() {
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
   const remainLeave = calcRemainingLeaveWithCarryover(myRequests, currentUser.hireDate);
-  const usedLeave = totalLeave - remainLeave;
+  const usedLeave = calcApprovedLeaveForYear(myRequests, new Date().getFullYear());
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
@@ -1143,7 +1155,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
     .map((u) => {
       const total = calcAnnualLeave(u.hireDate);
       const remain = calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
-      const used = total - remain;
+      const used = calcApprovedLeaveForYear(requests.filter((r) => r.userId === u.id), new Date().getFullYear());
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
       return { ...u, total, used, pending, remain };
     })
