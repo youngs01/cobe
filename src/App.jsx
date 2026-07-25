@@ -254,11 +254,16 @@ function App() {
     const previous = requests;
     setRequests((prev) => prev.map((item) => item.id === requestId ? { ...item, status: STATUS.APPROVED } : item));
     try {
-      await fetch(`/api/requests?id=${requestId}`, {
+      const res = await fetch(`/api/requests?id=${requestId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: STATUS.APPROVED, approvedBy: currentUser?.id, approvedAt: new Date().toISOString().slice(0, 10) }),
       });
+      const payload = await res.json();
+      if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
+        setCurrentUser((prev) => normalizeUser(prev ? { ...prev, manualRemain: payload.remain, remain: payload.remain } : null));
+        writeSession(normalizeUser(currentUser ? { ...currentUser, manualRemain: payload.remain, remain: payload.remain } : null));
+      }
       await refresh();
       setToast("승인되었습니다.");
     } catch {
@@ -271,11 +276,16 @@ function App() {
     const previous = requests;
     setRequests((prev) => prev.map((item) => item.id === requestId ? { ...item, status: STATUS.CANCELLED } : item));
     try {
-      await fetch(`/api/requests?id=${requestId}`, {
+      const res = await fetch(`/api/requests?id=${requestId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: STATUS.CANCELLED, approvedBy: null, approvedAt: null }),
       });
+      const payload = await res.json();
+      if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
+        setCurrentUser((prev) => normalizeUser(prev ? { ...prev, manualRemain: payload.remain, remain: payload.remain } : null));
+        writeSession(normalizeUser(currentUser ? { ...currentUser, manualRemain: payload.remain, remain: payload.remain } : null));
+      }
       await refresh();
       setToast("승인 취소되었습니다.");
     } catch {

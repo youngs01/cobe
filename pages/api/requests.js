@@ -69,9 +69,13 @@ export default async function handler(req, res) {
 
       console.log("[/api/requests PATCH] status transition", { id, oldStatus, newStatus, statusChanged });
       const r = await prisma.request.update({ where: { id }, data: updates });
-      await syncUserRemainingLeave(oldReq.userId, prisma);
+      const updatedRemain = await syncUserRemainingLeave(oldReq.userId, prisma);
 
-      res.status(200).json(r);
+      res.status(200).json({
+        request: r,
+        userId: oldReq.userId,
+        remain: updatedRemain,
+      });
     } else if (req.method === "DELETE") {
       const { id } = req.query;
       const existing = await prisma.request.findUnique({ where: { id } });
