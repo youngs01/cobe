@@ -38,9 +38,3 @@ model Request {
   approvedAt DateTime?
   user       User      @relation(fields: [userId], references: [id])
 }
-
-model Holiday {
-  id    String   @id @default(cuid())
-  date  DateTime @unique
-  label String?
-}
