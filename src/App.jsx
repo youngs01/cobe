@@ -57,9 +57,9 @@ const STATUS_COLOR = {
 
 // ─── 연차 계산 로직 (고용노동부 기준) ──────────────────────────────────────
 
-function calcAnnualLeave(hireDate) {
+function calcAnnualLeave(hireDate, asOfDate = new Date()) {
   const hire = new Date(hireDate);
-  const today = new Date();
+  const today = new Date(asOfDate);
   const diffMs = today - hire;
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const years = Math.floor(diffDays / 365);
@@ -75,59 +75,71 @@ function calcAnnualLeave(hireDate) {
   }
 }
 
+function getLeaveYearStart(hireDate, refDate = new Date()) {
+  const hire = new Date(hireDate);
+  const now = new Date(refDate);
+  const start = new Date(hire);
+  start.setFullYear(now.getFullYear());
+  start.setHours(0, 0, 0, 0);
+  if (start > now) {
+    start.setFullYear(now.getFullYear() - 1);
+  }
+  return start;
+}
+
+function getLeaveYearRanges(hireDate, refDate = new Date()) {
+  const currentStart = getLeaveYearStart(hireDate, refDate);
+  const lastStart = new Date(currentStart);
+  lastStart.setFullYear(currentStart.getFullYear() - 1);
+  const nextStart = new Date(currentStart);
+  nextStart.setFullYear(currentStart.getFullYear() + 1);
+  return { lastStart, currentStart, nextStart };
+}
+
+function isRequestInRange(r, start, end) {
+  const reqDate = r.date || r.startDate;
+  if (!reqDate) return false;
+  const d = new Date(reqDate);
+  return d >= start && d < end;
+}
+
+function calcApprovedLeaveForLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { currentStart, nextStart } = getLeaveYearRanges(hireDate, refDate);
+  return requests
+    .filter((r) => r.status === STATUS.APPROVED)
+    .filter((r) => isRequestInRange(r, currentStart, nextStart))
+    .reduce((acc, r) => acc + requestCost(r), 0);
+}
+
+function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { lastStart, currentStart } = getLeaveYearRanges(hireDate, refDate);
+  return requests
+    .filter((r) => r.status === STATUS.APPROVED)
+    .filter((r) => isRequestInRange(r, lastStart, currentStart))
+    .reduce((acc, r) => acc + requestCost(r), 0);
+}
+
 // 연도별 남은 연차 계산 (이월 포함)
 function calcRemainingLeaveWithCarryover(requests, hireDate) {
-  const hire = new Date(hireDate);
-  const currentYear = hire.getFullYear() + Math.floor((new Date().getFullYear() - hire.getFullYear()));
-  const lastYear = currentYear - 1;
+  const { lastStart, currentStart, nextStart } = getLeaveYearRanges(hireDate, new Date());
   
   // 작년 총 연차 계산
-  const lastYearHire = new Date(hire);
-  lastYearHire.setFullYear(lastYear);
-  const lastYearTotal = calcAnnualLeave(lastYearHire);
+  const lastYearTotal = calcAnnualLeave(hireDate, lastStart);
   
   // 작년 사용 연차
-  const lastYearUsed = requests
-    .filter((r) => r.status === STATUS.APPROVED)
-    .filter((r) => {
-      const reqDate = r.date || r.startDate;
-      if (!reqDate) return false;
-      const reqYear = new Date(reqDate).getFullYear();
-      return reqYear === lastYear;
-    })
-    .reduce((acc, r) => acc + requestCost(r), 0);
+  const lastYearUsed = calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date());
     
   // 작년 남은 연차 (이월될 값)
-  const lastYearRemain = lastYearTotal - lastYearUsed;
+  const lastYearRemain = Math.max(0, lastYearTotal - lastYearUsed);
   
   // 올해 총 연차 + 작년 이월
   const currentYearTotal = calcAnnualLeave(hireDate);
   const adjustedTotal = currentYearTotal + lastYearRemain;
   
   // 올해 사용 연차
-  const currentYearUsed = requests
-    .filter((r) => r.status === STATUS.APPROVED)
-    .filter((r) => {
-      const reqDate = r.date || r.startDate;
-      if (!reqDate) return false;
-      const reqYear = new Date(reqDate).getFullYear();
-      return reqYear === currentYear;
-    })
-    .reduce((acc, r) => acc + requestCost(r), 0);
+  const currentYearUsed = calcApprovedLeaveForLeaveYear(requests, hireDate, new Date());
     
   return Math.max(0, adjustedTotal - currentYearUsed);
-}
-
-function calcApprovedLeaveForYear(requests, year) {
-  return requests
-    .filter((r) => r.status === STATUS.APPROVED)
-    .filter((r) => {
-      const reqDate = r.date || r.startDate;
-      if (!reqDate) return false;
-      const reqYear = new Date(reqDate).getFullYear();
-      return reqYear === year;
-    })
-    .reduce((acc, r) => acc + requestCost(r), 0);
 }
 
 // 데이터는 더 이상 클라이언트에 하드코딩하지 않습니다.
@@ -329,7 +341,7 @@ export default function App() {
   const myRequests = requests.filter((r) => r.userId === currentUser.id);
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
-  const usedLeave = calcApprovedLeaveForYear(myRequests, new Date().getFullYear());
+  const usedLeave = calcApprovedLeaveForLeaveYear(myRequests, currentUser.hireDate);
   const remainLeave = currentUser.manualRemain !== undefined && currentUser.manualRemain !== null
     ? currentUser.manualRemain
     : Math.max(0, totalLeave - usedLeave);
@@ -1160,7 +1172,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
       const remain = manualRemain !== null
         ? manualRemain
         : calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
-      const used = calcApprovedLeaveForYear(requests.filter((r) => r.userId === u.id), new Date().getFullYear());
+      const used = calcApprovedLeaveForLeaveYear(requests.filter((r) => r.userId === u.id), u.hireDate);
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
       return { ...u, total, used, pending, remain, manualRemain };
     })
