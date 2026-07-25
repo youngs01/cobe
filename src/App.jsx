@@ -174,8 +174,12 @@ async function fetchRequests() {
       return [];
     }
     const data = await res.json();
-    console.log("fetchRequests success:", data.length, "items");
-    return data;
+    const normalized = (Array.isArray(data) ? data : []).map((item) => ({
+      ...item,
+      status: typeof item?.status === "string" ? item.status.trim() : item?.status,
+    }));
+    console.log("fetchRequests success:", normalized.length, "items");
+    return normalized;
   } catch (err) {
     console.error("fetchRequests exception:", err);
     return [];
@@ -1274,6 +1278,19 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
     filter === "전체" ? true : r.status === filter
   );
 
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    const aPending = a.status === STATUS.PENDING;
+    const bPending = b.status === STATUS.PENDING;
+
+    if (aPending !== bPending) {
+      return aPending ? -1 : 1;
+    }
+
+    const aTime = new Date(a.createdAt || 0).getTime();
+    const bTime = new Date(b.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+
   const approve = async (reqId) => {
     const previous = requests;
     setRequests((prev) => prev.map((r) => r.id === reqId ? { ...r, status: STATUS.APPROVED } : r));
@@ -1426,10 +1443,10 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
             ))}
           </div>
 
-          {filtered.length === 0 ? (
+          {sortedFiltered.length === 0 ? (
             <EmptyState msg="해당 신청이 없습니다." />
           ) : (
-            [...filtered].reverse().map((r) => (
+            sortedFiltered.map((r) => (
               <RequestItem
                 key={r.id}
                 req={r}

@@ -1,11 +1,18 @@
 import prisma from "../../lib/prisma";
 import { syncUserRemainingLeave } from "../../lib/leave";
 
+function normalizeStatusInput(value) {
+  return typeof value === "string" ? value.trim() : value;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const calls = await prisma.request.findMany();
-      res.status(200).json(calls);
+      res.status(200).json(calls.map((item) => ({
+        ...item,
+        status: normalizeStatusInput(item.status),
+      })));
     } else if (req.method === "POST") {
       const { userId, type, reason, status, date, startDate, endDate, halfDay } = req.body;
       console.log("[/api/requests POST] received:", { userId, type, reason, status, date, startDate, endDate, halfDay });
@@ -14,7 +21,7 @@ export default async function handler(req, res) {
       if (!reason) return res.status(400).json({ error: "reason required" });
       if (!status) return res.status(400).json({ error: "status required" });
 
-      let data = { userId, type, reason, status };
+      let data = { userId, type, reason, status: normalizeStatusInput(status) };
       if (type === "연차") {
         if (!startDate) return res.status(400).json({ error: "startDate required for 연차" });
         if (!endDate) return res.status(400).json({ error: "endDate required for 연차" });
@@ -46,6 +53,9 @@ export default async function handler(req, res) {
     } else if (req.method === "PATCH") {
       const { id } = req.query;
       const updates = { ...req.body };
+      if (updates.status !== undefined) {
+        updates.status = normalizeStatusInput(updates.status);
+      }
       const oldReq = await prisma.request.findUnique({ where: { id } });
       if (!oldReq) return res.status(404).json({ error: "Request not found" });
       const oldStatus = oldReq.status;
