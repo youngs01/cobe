@@ -267,7 +267,7 @@ export default function App() {
         const res = await fetch(`/api/holidays`);
         if (!res.ok) return;
         const data = await res.json();
-        HOLIDAYS = data.holidays || [];
+        HOLIDAYS = (data.holidays || []).map((h) => h.date);
         setHolidayLoaded(true); // trigger re-render
       } catch (e) {
         console.error("load holidays failed", e);
@@ -1340,6 +1340,9 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
       const remain = manualRemain !== null
         ? manualRemain
         : calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
+      const used = calcApprovedLeaveForLeaveYear(requests.filter((r) => r.userId === u.id), u.hireDate);
+      const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
+      return { ...u, total, used, pending, remain, manualRemain };
       const used = calcApprovedLeaveForLeaveYear(requests.filter((r) => r.userId === u.id), u.hireDate);
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
       return { ...u, total, used, pending, remain, manualRemain };

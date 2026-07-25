@@ -8,10 +8,11 @@ export default async function handler(req, res) {
       const start = new Date(`${year}-01-01`);
       const end = new Date(`${year + 1}-01-01`);
       const items = await prisma.holiday.findMany({ where: { date: { gte: start, lt: end } }, orderBy: { date: 'asc' } });
-      const fallbackHolidays = await getHolidays(year);
-      const holidays = items.length > 0
-        ? items.map((h) => ({ id: h.id, date: h.date.toISOString().slice(0, 10), label: h.label }))
-        : fallbackHolidays.map((h) => ({ id: `public-${h.date}`, date: h.date, label: h.label }));
+      const defaultHolidays = await getHolidays(year);
+      const dbHolidays = items.map((h) => ({ id: h.id, date: h.date.toISOString().slice(0, 10), label: h.label }));
+      const merged = [...defaultHolidays.map((h) => ({ ...h, id: `public-${h.date}`, isDefault: true })), ...dbHolidays.map((h) => ({ ...h, isDefault: false }))];
+      const unique = Array.from(new Map(merged.map((h) => [h.date, h])).values());
+      const holidays = unique.sort((a, b) => a.date.localeCompare(b.date));
       res.status(200).json({ year, holidays });
     } else if (req.method === "POST") {
       // create single or batch
