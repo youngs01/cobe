@@ -1,22 +1,8 @@
-// ─── 네이버 공휴일 목록 (예시, 실제로는 매년 업데이트 필요) ────────────────
-const HOLIDAYS = [
-  "2026-01-01", // 신정
-  "2026-02-18", "2026-02-19", "2026-02-20", // 설날
-  "2026-03-01", // 삼일절
-  "2026-05-05", // 어린이날
-  "2026-05-25", // 석가탄신일 대체 휴일
-  "2026-06-03", // 지방선거
-  "2026-06-06", // 현충일
-  "2026-07-17", // 제헌절
-  "2026-08-15", // 광복절
-  "2026-08-17", // 광복절 대체 휴일
-  "2026-09-24", "2026-09-25", "2026-09-26", // 추석
-  "2026-10-03", // 개천절
-  "2026-10-05", // 개천절 대체 휴일
-  "2026-10-09", // 한글날
-  "2026-12-25", // 성탄절
-];
 import React, { useState, useEffect } from "react";
+
+// holidays are loaded from server `/api/holidays` at runtime.
+// kept in module scope so helper functions can access it.
+let HOLIDAYS = [];
 // import Icon from "./Icon";
 
 // ─── 상수 ───────────────────────────────────────────────────────────────────
@@ -130,7 +116,8 @@ function calcRemainingLeaveWithCarryover(requests, hireDate) {
   const lastYearUsed = calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date());
     
   // 작년 남은 연차 (이월될 값)
-  const lastYearRemain = Math.max(0, lastYearTotal - lastYearUsed);
+  // allow negative carryover so that 초과 사용(마이너스) subtracts from next year's allocation
+  const lastYearRemain = lastYearTotal - lastYearUsed;
   
   // 올해 총 연차 + 작년 이월
   const currentYearTotal = calcAnnualLeave(hireDate);
@@ -139,6 +126,7 @@ function calcRemainingLeaveWithCarryover(requests, hireDate) {
   // 올해 사용 연차
   const currentYearUsed = calcApprovedLeaveForLeaveYear(requests, hireDate, new Date());
     
+  // Show remaining after applying carryover; do not report negative values to users
   return Math.max(0, adjustedTotal - currentYearUsed);
 }
 
@@ -271,6 +259,22 @@ export default function App() {
     })();
   }, []);
 
+  // load holidays from server (Naver Calendar source planned)
+  const [, setHolidayLoaded] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/holidays`);
+        if (!res.ok) return;
+        const data = await res.json();
+        HOLIDAYS = data.holidays || [];
+        setHolidayLoaded(true); // trigger re-render
+      } catch (e) {
+        console.error("load holidays failed", e);
+      }
+    })();
+  }, []);
+
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
@@ -394,11 +398,10 @@ export default function App() {
             <button style={styles.logoutBtn} onClick={handleLogout}>
               <Icon name="logout" size={18} />
             </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* 본문 */}
       <main style={styles.main}>
         {page === "dashboard" && (
           <Dashboard
@@ -485,6 +488,186 @@ export default function App() {
         ))}
       </nav>
     </div>
+  );
+}
+
+// ─── HolidayAdmin component for super admins ─────────────────────────────────
+function HolidayAdmin({ showToast, refresh }) {
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [list, setList] = useState([]);
+  const [date, setDate] = useState("");
+  const [label, setLabel] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = async (y = year) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/holidays?year=${y}`);
+      if (!res.ok) throw new Error('fetch failed');
+      const data = await res.json();
+      setList(data.holidays || []);
+    } catch (e) {
+      showToast('휴일 불러오기 실패', 'error');
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(year); }, [year]);
+
+  const handleAdd = async () => {
+    if (!date) return showToast('날짜를 선택하세요', 'error');
+    try {
+      const res = await fetch('/api/holidays', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date, label }) });
+      if (!res.ok) throw new Error('create failed');
+      const created = await res.json();
+      setList((s) => [...s, created].sort((a,b)=>a.date.localeCompare(b.date)));
+      setDate(''); setLabel('');
+      // update client HOLIDAYS used by calc
+      HOLIDAYS = list.concat([created]).map(h => h.date);
+      showToast('추가되었습니다.');
+      if (refresh) refresh();
+    } catch (e) {
+      showToast('추가 실패', 'error');
+    }
+  };
+
+  const handleEditSave = async (id, newDate, newLabel) => {
+    try {
+      const res = await fetch(`/api/holidays?id=${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: newDate, label: newLabel }) });
+      if (!res.ok) throw new Error('update failed');
+      const up = await res.json();
+      setList((s) => s.map(x => x.id === id ? up : x));
+      HOLIDAYS = list.map(h => h.date);
+      showToast('수정되었습니다.');
+      if (refresh) refresh();
+    } catch (e) {
+      showToast('수정 실패', 'error');
+    }
+  };
+
+  const handleExport = () => {
+    const rows = list.map(h => `${h.date},${(h.label||'').replace(/,/g,' ')}`);
+    const csv = 'date,label\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `holidays_${year}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const items = [];
+    for (const ln of lines) {
+      if (ln.toLowerCase().startsWith('date')) continue;
+      const parts = ln.split(',');
+      const d = parts[0].trim();
+      const lab = parts.slice(1).join(',').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) items.push({ date: d, label: lab || null });
+    }
+    if (items.length === 0) return showToast('CSV에 유효한 항목이 없습니다', 'error');
+    try {
+      const res = await fetch('/api/holidays', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+      if (!res.ok) throw new Error('batch failed');
+      const data = await res.json();
+      showToast(`${data.created || 0}개 추가되었습니다.`);
+      load(year);
+      if (refresh) refresh();
+    } catch (e) {
+      showToast('CSV 업로드 실패', 'error');
+    }
+  };
+
+  const handleSyncPublic = async () => {
+    if (!confirm('공공데이터포털에서 해당 연도의 공휴일을 불러옵니다. 진행하시겠습니까?')) return;
+    try {
+      const res = await fetch(`/api/holidays/sync?year=${year}`, { method: 'POST' });
+      if (!res.ok) throw new Error('sync failed');
+      const data = await res.json();
+      showToast(`${data.synced || 0}개 동기화됨`);
+      load(year);
+      if (refresh) refresh();
+    } catch (e) {
+      showToast('동기화 실패. 서버에 API 키가 설정되어 있나요?', 'error');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('삭제하시겠습니까?')) return;
+    try {
+      const res = await fetch(`/api/holidays?id=${id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 204) throw new Error('delete failed');
+      setList((s) => s.filter(x => x.id !== id));
+      HOLIDAYS = list.filter(x=>x.id!==id).map(h => h.date);
+      showToast('삭제되었습니다.');
+      if (refresh) refresh();
+    } catch (e) {
+      showToast('삭제 실패', 'error');
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <select value={year} onChange={(e)=>setYear(parseInt(e.target.value,10))}>
+          {Array.from({length:5}).map((_,i)=>{
+            const y = new Date().getFullYear() - 2 + i; return <option key={y} value={y}>{y}년</option>
+          })}
+        </select>
+        <input type="date" value={date} onChange={(e)=>setDate(e.target.value)} />
+        <input placeholder="설명(선택)" value={label} onChange={(e)=>setLabel(e.target.value)} />
+        <button onClick={handleAdd} style={styles.primaryBtn}>추가</button>
+        <button onClick={handleExport} style={{ ...styles.primaryBtn, background: '#06b6d4' }}>CSV 내보내기</button>
+        <label style={{ display: 'inline-block', padding: '6px 10px', background: '#e5e7eb', borderRadius: 6, cursor: 'pointer' }}>
+          CSV 가져오기<input type="file" accept=".csv" style={{ display: 'none' }} onChange={(e)=>handleImportFile(e.target.files?.[0])} />
+        </label>
+        <button onClick={handleSyncPublic} style={{ marginLeft: 8 }}>공공데이터 동기화</button>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        {loading ? <div>불러오는 중...</div> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr><th style={{ textAlign: 'left' }}>날짜</th><th style={{ textAlign: 'left' }}>설명</th><th></th></tr>
+            </thead>
+            <tbody>
+              {list.map(h => (
+                <HolidayRow key={h.id} h={h} onDelete={handleDelete} onSave={handleEditSave} />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HolidayRow({ h, onDelete, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [d, setD] = useState(h.date);
+  const [lab, setLab] = useState(h.label || "");
+  useEffect(()=>{ setD(h.date); setLab(h.label||""); }, [h]);
+  return (
+    <tr>
+      <td>
+        {editing ? <input type="date" value={d} onChange={(e)=>setD(e.target.value)} /> : d}
+      </td>
+      <td>
+        {editing ? <input value={lab} onChange={(e)=>setLab(e.target.value)} /> : (lab || '-')}
+      </td>
+      <td>
+        {editing ? (
+          <>
+            <button onClick={()=>{ onSave(h.id, d, lab); setEditing(false); }} style={{ marginRight:8 }}>저장</button>
+            <button onClick={()=>{ setEditing(false); setD(h.date); setLab(h.label||""); }}>취소</button>
+          </>
+        ) : (
+          <>
+            <button onClick={()=>setEditing(true)} style={{ marginRight:8 }}>편집</button>
+            <button onClick={()=>onDelete(h.id)} style={{ color: '#ef4444' }}>삭제</button>
+          </>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -1366,6 +1549,26 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
             })
           )}
         </>
+      )}
+
+      {tab === "holidays" && isSuperAdmin && (
+        <div style={{ marginTop: 12 }}>
+          <h3 style={{ marginTop: 0 }}>휴일 관리</h3>
+          <HolidayAdmin showToast={showToast} refresh={() => {
+            // reload holidays for client calc
+            (async () => {
+              try {
+                const res = await fetch('/api/holidays');
+                if (!res.ok) return;
+                const data = await res.json();
+                HOLIDAYS = data.holidays.map(h => h.date);
+                showToast('휴일 목록을 불러왔습니다.');
+              } catch (e) {
+                showToast('휴일 불러오기 실패', 'error');
+              }
+            })();
+          }} />
+        </div>
       )}
     </div>
   );
