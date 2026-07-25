@@ -329,8 +329,8 @@ export default function App() {
   const myRequests = requests.filter((r) => r.userId === currentUser.id);
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
-  const remainLeave = calcRemainingLeaveWithCarryover(myRequests, currentUser.hireDate);
   const usedLeave = calcApprovedLeaveForYear(myRequests, new Date().getFullYear());
+  const remainLeave = Math.max(0, totalLeave - usedLeave);
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
