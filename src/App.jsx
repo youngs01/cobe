@@ -106,13 +106,15 @@ function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new
 }
 
 function calcEffectiveRemainingLeave(requests, hireDate, manualRemain) {
+  const dbRemain = manualRemain !== undefined && manualRemain !== null && manualRemain !== ""
+    ? Number(manualRemain)
+    : null;
+
+  if (Number.isFinite(dbRemain)) {
+    return Math.max(0, dbRemain);
+  }
+
   const computed = calcRemainingLeaveWithCarryover(requests, hireDate);
-  if (Array.isArray(requests) && requests.length > 0) {
-    return Math.max(0, Number(computed));
-  }
-  if (manualRemain !== undefined && manualRemain !== null) {
-    return Math.max(0, Number(manualRemain));
-  }
   return Math.max(0, Number(computed));
 }
 
