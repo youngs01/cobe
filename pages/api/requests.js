@@ -109,6 +109,22 @@ function calcRemainingLeaveWithCarryover(requests, hireDate) {
   return Math.max(0, adjustedTotal - currentYearUsed);
 }
 
+async function syncUserRemainingLeave(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+
+  const requests = await prisma.request.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
+  const approvedRequests = requests.filter((r) => r.status === "승인");
+  const newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { manualRemain: newRemain },
+  });
+
+  return newRemain;
+}
+
 export default async function handler(req, res) {
   try {
     try {
@@ -151,6 +167,7 @@ export default async function handler(req, res) {
       console.log("[/api/requests POST] final data:", JSON.stringify(data, null, 2));
       try {
         const r = await prisma.request.create({ data });
+        await syncUserRemainingLeave(userId);
         console.log("[/api/requests POST] created:", r);
         res.status(201).json(r);
       } catch (createErr) {
@@ -172,39 +189,16 @@ export default async function handler(req, res) {
       if (updates.approvedAt && typeof updates.approvedAt === "string") updates.approvedAt = new Date(updates.approvedAt);
 
       const r = await prisma.request.update({ where: { id }, data: updates });
-
-      if (statusChanged && (oldStatus === "승인" || newStatus === "승인")) {
-        const user = await prisma.user.findUnique({ where: { id: oldReq.userId } });
-        if (user) {
-          const requestYear = oldReq.startDate?.getFullYear() ?? oldReq.date?.getFullYear() ?? new Date().getFullYear();
-          const cost = requestCost(oldReq, getServerHolidays(requestYear));
-          let newRemain;
-
-          if (user.manualRemain !== undefined && user.manualRemain !== null) {
-            newRemain = user.manualRemain;
-            if (oldStatus !== "승인" && newStatus === "승인") {
-              newRemain = Math.max(0, newRemain - cost);
-            } else if (oldStatus === "승인" && newStatus !== "승인") {
-              newRemain = newRemain + cost;
-            }
-          } else {
-            const approvedRequests = await prisma.request.findMany({
-              where: { userId: user.id, status: "승인" },
-            });
-            newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
-          }
-
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { manualRemain: newRemain },
-          });
-        }
-      }
+      await syncUserRemainingLeave(oldReq.userId);
 
       res.status(200).json(r);
     } else if (req.method === "DELETE") {
       const { id } = req.query;
+      const existing = await prisma.request.findUnique({ where: { id } });
       await prisma.request.delete({ where: { id } });
+      if (existing) {
+        await syncUserRemainingLeave(existing.userId);
+      }
       res.status(204).end();
     } else {
       res.setHeader("Allow", ["GET", "POST", "PATCH", "DELETE"]);
