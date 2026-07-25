@@ -75,6 +75,49 @@ function calcAnnualLeave(hireDate) {
   }
 }
 
+// 연도별 남은 연차 계산 (이월 포함)
+function calcRemainingLeaveWithCarryover(requests, hireDate) {
+  const hire = new Date(hireDate);
+  const currentYear = hire.getFullYear() + Math.floor((new Date().getFullYear() - hire.getFullYear()));
+  const lastYear = currentYear - 1;
+  
+  // 작년 총 연차 계산
+  const lastYearHire = new Date(hire);
+  lastYearHire.setFullYear(lastYear);
+  const lastYearTotal = calcAnnualLeave(lastYearHire);
+  
+  // 작년 사용 연차
+  const lastYearUsed = requests
+    .filter((r) => r.status === STATUS.APPROVED)
+    .filter((r) => {
+      const reqDate = r.date || r.startDate;
+      if (!reqDate) return false;
+      const reqYear = new Date(reqDate).getFullYear();
+      return reqYear === lastYear;
+    })
+    .reduce((acc, r) => acc + requestCost(r), 0);
+    
+  // 작년 남은 연차 (이월될 값)
+  const lastYearRemain = lastYearTotal - lastYearUsed;
+  
+  // 올해 총 연차 + 작년 이월
+  const currentYearTotal = calcAnnualLeave(hireDate);
+  const adjustedTotal = currentYearTotal + lastYearRemain;
+  
+  // 올해 사용 연차
+  const currentYearUsed = requests
+    .filter((r) => r.status === STATUS.APPROVED)
+    .filter((r) => {
+      const reqDate = r.date || r.startDate;
+      if (!reqDate) return false;
+      const reqYear = new Date(reqDate).getFullYear();
+      return reqYear === currentYear;
+    })
+    .reduce((acc, r) => acc + requestCost(r), 0);
+    
+  return Math.max(0, adjustedTotal - currentYearUsed);
+}
+
 // 데이터는 더 이상 클라이언트에 하드코딩하지 않습니다.
 // 실제 운영 시에는 백엔드 API와 데이터베이스(Prisma/Neon 등)로부터
 // 사용자 및 연차 요청을 가져오고 저장해야 합니다.
@@ -274,8 +317,8 @@ export default function App() {
   const myRequests = requests.filter((r) => r.userId === currentUser.id);
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
-  const usedLeave = myRequests.filter((r) => r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
-  const remainLeave = totalLeave - usedLeave;
+  const remainLeave = calcRemainingLeaveWithCarryover(myRequests, currentUser.hireDate);
+  const usedLeave = totalLeave - remainLeave;
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
@@ -370,6 +413,7 @@ export default function App() {
         {page === "admin" && isSuperAdmin && (
           <AdminPage
             users={users}
+            requests={requests}
             setUsers={setUsers}
             showToast={showToast}
             refresh={refresh}
@@ -1098,9 +1142,9 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
   const staffLeaveStats = staffUsers
     .map((u) => {
       const total = calcAnnualLeave(u.hireDate);
-      const used = requests.filter((r) => r.userId === u.id && r.status === STATUS.APPROVED).reduce((acc, r) => acc + requestCost(r), 0);
+      const remain = calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
+      const used = total - remain;
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-      const remain = total - used;
       return { ...u, total, used, pending, remain };
     })
     .sort((a, b) => {
@@ -1372,7 +1416,7 @@ function LeaveBadge({ hireDate }) {
 
 // ─── 관리자 페이지 ────────────────────────────────────────────────────────────
 
-function AdminPage({ users, setUsers, showToast, refresh }) {
+function AdminPage({ users, requests, setUsers, showToast, refresh }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     id: "", pw: "", name: "", role: ROLES.TEACHER, hireDate: "", classRoom: "",
@@ -1481,7 +1525,12 @@ function AdminPage({ users, setUsers, showToast, refresh }) {
       )}
 
       <div style={styles.pageHeader}>
-        <h2 style={styles.pageTitle}>직원 계정 관리</h2>
+        <div>
+          <h2 style={styles.pageTitle}>직원 계정 관리</h2>
+          <p style={{ margin: 4, color: '#6b7280', fontSize: 13 }}>
+            입사일 기준 법정 연차와 잔여 연차는 자동 계산됩니다. 수동 잔여는 시스템 적용 또는 직접 입력으로 업데이트하세요.
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={{ ...styles.ghostBtn, padding: '10px 12px' }} onClick={applySystem}>시스템 적용</button>
           <button style={styles.addBtn} onClick={() => { setShowForm(!showForm); setExpandedId(null); setExpandedManualRemain(null); }}>
@@ -1624,6 +1673,10 @@ function AdminPage({ users, setUsers, showToast, refresh }) {
                           <div style={styles.expandedRow}>
                             <span style={styles.expandedLabel}>적용 연차</span>
                             <span style={{ ...styles.expandedVal, color: "#6366f1", fontWeight: 800 }}>{leave}일</span>
+                          </div>
+                          <div style={styles.expandedRow}>
+                            <span style={styles.expandedLabel}>잔여 연차</span>
+                            <span style={{ ...styles.expandedVal, color: "#10b981", fontWeight: 800 }}>{calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate)}일</span>
                           </div>
                           <div style={styles.expandedRow}>
                             <span style={styles.expandedLabel}>수동 잔여</span>
