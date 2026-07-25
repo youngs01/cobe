@@ -181,6 +181,7 @@ function App() {
   const [loginPw, setLoginPw] = useState("");
   const [loginError, setLoginError] = useState("");
   const [toast, setToast] = useState(null);
+  const [displayRemain, setDisplayRemain] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -194,6 +195,8 @@ function App() {
           const nextUser = normalizeUser(latest || restored);
           if (nextUser) {
             setCurrentUser(nextUser);
+            const parsedRemain = parseNumber(nextUser.remain ?? nextUser.manualRemain);
+            setDisplayRemain(parsedRemain !== null ? parsedRemain : null);
             writeSession(nextUser);
           }
         }
@@ -212,13 +215,22 @@ function App() {
 
   const refresh = async () => {
     const [u, r] = await Promise.all([fetchUsers(), fetchRequests()]);
-    setUsers(u || []);
-    setRequests(r || []);
+    const nextUsers = u || [];
+    const nextRequests = r || [];
+    setUsers(nextUsers);
+    setRequests(nextRequests);
     if (currentUser?.id) {
-      const latest = (u || []).find((x) => x.id === currentUser.id);
-      const nextUser = normalizeUser(latest || currentUser);
+      const latest = nextUsers.find((x) => x.id === currentUser.id);
+      const baseUser = latest || currentUser;
+      const nextUser = normalizeUser({
+        ...baseUser,
+        manualRemain: baseUser.manualRemain ?? baseUser.remain,
+        remain: baseUser.remain ?? baseUser.manualRemain,
+      });
       if (nextUser) {
         setCurrentUser(nextUser);
+        const parsedRemain = parseNumber(nextUser.remain ?? nextUser.manualRemain);
+        setDisplayRemain(parsedRemain !== null ? parsedRemain : null);
         writeSession(nextUser);
       }
     }
@@ -241,6 +253,8 @@ function App() {
         return;
       }
       setCurrentUser(user);
+      const parsedRemain = parseNumber(user.remain ?? user.manualRemain);
+      setDisplayRemain(parsedRemain !== null ? parsedRemain : null);
       writeSession(user);
       setLoginError("");
       setToast("로그인되었습니다.");
@@ -309,8 +323,13 @@ function App() {
 
   const myRequests = useMemo(() => requests.filter((r) => r.userId === currentUser?.id), [requests, currentUser]);
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
-  const usedLeave = useMemo(() => calcApprovedLeaveForLeaveYear(myRequests, currentUser?.hireDate), [myRequests, currentUser]);
-  const remainLeave = useMemo(() => calcEffectiveRemainingLeave(myRequests, currentUser?.hireDate, currentUser?.manualRemain), [myRequests, currentUser]);
+  const remainLeave = useMemo(() => {
+    const raw = displayRemain ?? currentUser?.remain ?? currentUser?.manualRemain;
+    const parsed = parseNumber(raw);
+    return parsed !== null ? Math.max(0, parsed) : 0;
+  }, [displayRemain, currentUser]);
+  const totalLeave = useMemo(() => calcAnnualLeave(currentUser?.hireDate), [currentUser]);
+  const usedLeave = useMemo(() => Math.max(0, totalLeave - remainLeave), [totalLeave, remainLeave]);
 
   if (!authReady) {
     return <div style={{ padding: 24 }}>상태를 불러오는 중입니다…</div>;
