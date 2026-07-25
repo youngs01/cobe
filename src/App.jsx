@@ -578,20 +578,6 @@ function HolidayAdmin({ showToast, refresh }) {
     }
   };
 
-  const handleSyncPublic = async () => {
-    if (!confirm('공공데이터포털에서 해당 연도의 공휴일을 불러옵니다. 진행하시겠습니까?')) return;
-    try {
-      const res = await fetch(`/api/holidays/sync?year=${year}`, { method: 'POST' });
-      if (!res.ok) throw new Error('sync failed');
-      const data = await res.json();
-      showToast(`${data.synced || 0}개 동기화됨`);
-      load(year);
-      if (refresh) refresh();
-    } catch (e) {
-      showToast('동기화 실패. 서버에 API 키가 설정되어 있나요?', 'error');
-    }
-  };
-
   const handleDelete = async (id) => {
     if (!confirm('삭제하시겠습니까?')) return;
     try {
@@ -621,7 +607,6 @@ function HolidayAdmin({ showToast, refresh }) {
         <label style={{ display: 'inline-block', padding: '6px 10px', background: '#e5e7eb', borderRadius: 6, cursor: 'pointer' }}>
           CSV 가져오기<input type="file" accept=".csv" style={{ display: 'none' }} onChange={(e)=>handleImportFile(e.target.files?.[0])} />
         </label>
-        <button onClick={handleSyncPublic} style={{ marginLeft: 8 }}>공공데이터 동기화</button>
       </div>
       <div style={{ marginTop: 12 }}>
         {loading ? <div>불러오는 중...</div> : (

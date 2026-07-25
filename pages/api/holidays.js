@@ -1,4 +1,5 @@
 import prisma from "../../lib/prisma";
+import { getHolidays } from "../../lib/holidays";
 
 export default async function handler(req, res) {
   try {
@@ -7,8 +8,10 @@ export default async function handler(req, res) {
       const start = new Date(`${year}-01-01`);
       const end = new Date(`${year + 1}-01-01`);
       const items = await prisma.holiday.findMany({ where: { date: { gte: start, lt: end } }, orderBy: { date: 'asc' } });
-      // return as yyyy-mm-dd strings
-      const holidays = items.map((h) => ({ id: h.id, date: h.date.toISOString().slice(0, 10), label: h.label }));
+      const fallbackHolidays = await getHolidays(year);
+      const holidays = items.length > 0
+        ? items.map((h) => ({ id: h.id, date: h.date.toISOString().slice(0, 10), label: h.label }))
+        : fallbackHolidays.map((h) => ({ id: `public-${h.date}`, date: h.date, label: h.label }));
       res.status(200).json({ year, holidays });
     } else if (req.method === "POST") {
       // create single or batch
