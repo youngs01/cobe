@@ -117,6 +117,8 @@ async function syncUserRemainingLeave(userId) {
   const approvedRequests = requests.filter((r) => r.status === "승인");
   const newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
 
+  console.log("[syncUserRemainingLeave]", { userId, existingManualRemain: user.manualRemain, newRemain, approvedCount: approvedRequests.length });
+
   await prisma.user.update({
     where: { id: user.id },
     data: { manualRemain: newRemain },
@@ -188,6 +190,7 @@ export default async function handler(req, res) {
       if (updates.endDate && typeof updates.endDate === "string") updates.endDate = new Date(updates.endDate);
       if (updates.approvedAt && typeof updates.approvedAt === "string") updates.approvedAt = new Date(updates.approvedAt);
 
+      console.log("[/api/requests PATCH] status transition", { id, oldStatus, newStatus, statusChanged });
       const r = await prisma.request.update({ where: { id }, data: updates });
       await syncUserRemainingLeave(oldReq.userId);
 
