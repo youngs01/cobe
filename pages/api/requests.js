@@ -49,12 +49,56 @@ export default async function handler(req, res) {
     } else if (req.method === "PATCH") {
       const { id } = req.query;
       const updates = { ...req.body };
-      // Convert date/startDate/endDate/approvedAt to DateTime if provided
+      const oldReq = await prisma.request.findUnique({ where: { id } });
+      if (!oldReq) return res.status(404).json({ error: "Request not found" });
+      const oldStatus = oldReq.status;
+      const newStatus = updates.status ?? oldStatus;
+      const statusChanged = newStatus !== oldStatus;
+
+      // if approval state changes, adjust the user's stored manualRemain
+      let manualRemainUpdate = null;
+      if (statusChanged && (oldStatus === "승인" || newStatus === "승인")) {
+        const user = await prisma.user.findUnique({ where: { id: oldReq.userId } });
+        if (user) {
+          let currentRemain;
+          if (user.manualRemain !== undefined && user.manualRemain !== null) {
+            currentRemain = user.manualRemain;
+          } else {
+            const existingApproved = await prisma.request.findMany({
+              where: {
+                userId: user.id,
+                status: "승인",
+                id: { not: oldReq.id },
+              },
+            });
+            currentRemain = calcRemainingLeaveWithCarryover(existingApproved, user.hireDate);
+          }
+
+          const requestYear = oldReq.startDate?.getFullYear() ?? oldReq.date?.getFullYear() ?? new Date().getFullYear();
+          const cost = requestCost(oldReq, getServerHolidays(requestYear));
+          let newRemain = currentRemain;
+          if (oldStatus !== "승인" && newStatus === "승인") {
+            newRemain = Math.max(0, currentRemain - cost);
+          } else if (oldStatus === "승인" && newStatus !== "승인") {
+            newRemain = currentRemain + cost;
+          }
+
+          manualRemainUpdate = { manualRemain: newRemain, userId: user.id };
+        }
+      }
+
+      // Convert date/startDate/approvedAt fields to Date objects if provided
       if (updates.date && typeof updates.date === "string") updates.date = new Date(updates.date);
       if (updates.startDate && typeof updates.startDate === "string") updates.startDate = new Date(updates.startDate);
       if (updates.endDate && typeof updates.endDate === "string") updates.endDate = new Date(updates.endDate);
       if (updates.approvedAt && typeof updates.approvedAt === "string") updates.approvedAt = new Date(updates.approvedAt);
       const r = await prisma.request.update({ where: { id }, data: updates });
+      if (manualRemainUpdate) {
+        await prisma.user.update({
+          where: { id: manualRemainUpdate.userId },
+          data: { manualRemain: manualRemainUpdate.manualRemain },
+        });
+      }
       res.status(200).json(r);
     } else if (req.method === "DELETE") {
       const { id } = req.query;

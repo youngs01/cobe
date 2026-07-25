@@ -105,6 +105,13 @@ function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new
     .reduce((acc, r) => acc + requestCost(r), 0);
 }
 
+function calcEffectiveRemainingLeave(requests, hireDate, manualRemain) {
+  if (manualRemain !== undefined && manualRemain !== null) {
+    return Math.max(0, Number(manualRemain));
+  }
+  return calcRemainingLeaveWithCarryover(requests, hireDate);
+}
+
 // 연도별 남은 연차 계산 (이월 포함)
 function calcRemainingLeaveWithCarryover(requests, hireDate) {
   const { lastStart, currentStart, nextStart } = getLeaveYearRanges(hireDate, new Date());
@@ -346,9 +353,8 @@ export default function App() {
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
   const usedLeave = calcApprovedLeaveForLeaveYear(myRequests, currentUser.hireDate);
-  const remainLeave = currentUser.manualRemain !== undefined && currentUser.manualRemain !== null
-    ? currentUser.manualRemain
-    : Math.max(0, totalLeave - usedLeave);
+  const remainLeave = calcEffectiveRemainingLeave(myRequests, currentUser.hireDate, currentUser.manualRemain);
+
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
@@ -1337,14 +1343,10 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
     .map((u) => {
       const total = calcAnnualLeave(u.hireDate);
       const manualRemain = u.manualRemain !== undefined && u.manualRemain !== null ? u.manualRemain : null;
-      const remain = manualRemain !== null
-        ? manualRemain
-        : calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
-      const used = calcApprovedLeaveForLeaveYear(requests.filter((r) => r.userId === u.id), u.hireDate);
-      const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-      return { ...u, total, used, pending, remain, manualRemain };
-      const used = calcApprovedLeaveForLeaveYear(requests.filter((r) => r.userId === u.id), u.hireDate);
-      const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
+      const userRequests = requests.filter((r) => r.userId === u.id);
+      const remain = calcEffectiveRemainingLeave(userRequests, u.hireDate, manualRemain);
+      const used = calcApprovedLeaveForLeaveYear(userRequests, u.hireDate);
+      const pending = userRequests.filter((r) => r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
       return { ...u, total, used, pending, remain, manualRemain };
     })
     .sort((a, b) => {
