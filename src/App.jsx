@@ -43,13 +43,30 @@ const STATUS_COLOR = {
 
 const SESSION_STORAGE_KEY = "cobe-leave-current-user";
 
+function parseNumeric(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeUser(user) {
+  if (!user || typeof user !== "object") return null;
+  const manualRemain = parseNumeric(user.manualRemain);
+  const remain = parseNumeric(user.remain);
+  return {
+    ...user,
+    manualRemain: manualRemain ?? remain,
+    remain: remain ?? manualRemain,
+  };
+}
+
 function readStoredUser() {
   if (typeof window === "undefined") return null;
   try {
-    const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
     if (!stored) return null;
     const parsed = JSON.parse(stored);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    return parsed && typeof parsed === "object" ? normalizeUser(parsed) : null;
   } catch (err) {
     console.error("readStoredUser failed", err);
     return null;
@@ -59,10 +76,10 @@ function readStoredUser() {
 function writeStoredUser(user) {
   if (typeof window === "undefined") return;
   if (!user) {
-    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
     return;
   }
-  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(normalizeUser(user)));
 }
 
 // ─── 연차 계산 로직 (고용노동부 기준) ──────────────────────────────────────
@@ -284,12 +301,13 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
 export default function App() {
   const [users, setUsers] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [currentUser, setCurrentUser] = useState(() => readStoredUser());
-  const [page, setPage] = useState(() => (readStoredUser() ? "dashboard" : "dashboard"));
+  const [currentUser, setCurrentUser] = useState(null);
+  const [page, setPage] = useState("dashboard");
   const [loginId, setLoginId] = useState("");
   const [loginPw, setLoginPw] = useState("");
   const [loginError, setLoginError] = useState("");
   const [toast, setToast] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   // 초기 렌더링 시 서버에서 데이터를 로드
   useEffect(() => {
@@ -297,12 +315,25 @@ export default function App() {
       const [u, r] = await Promise.all([fetchUsers(), fetchRequests()]);
       setUsers(u);
       setRequests(r);
+
+      const restoredUser = readStoredUser();
+      if (restoredUser) {
+        const latestUser = u.find((x) => x.id === restoredUser.id);
+        const nextUser = normalizeUser(latestUser || restoredUser);
+        if (nextUser) {
+          setCurrentUser(nextUser);
+          writeStoredUser(nextUser);
+          setPage("dashboard");
+        }
+      }
+      setAuthReady(true);
     })();
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
     writeStoredUser(currentUser);
-  }, [currentUser]);
+  }, [authReady, currentUser]);
 
   // load holidays from server (Naver Calendar source planned)
   const [, setHolidayLoaded] = useState(false);
@@ -330,11 +361,18 @@ export default function App() {
     const [u, r] = await Promise.all([fetchUsers(), fetchRequests()]);
     setUsers(u);
     setRequests(r);
-    // 현재 로그인한 사용자가 있으면 최신 사용자 정보로 갱신
-    if (currentUser) {
-      const updated = u.find((x) => x.id === currentUser.id);
-      if (updated) setCurrentUser(updated);
-    }
+
+    setCurrentUser((prev) => {
+      if (!prev?.id) return prev;
+      const updated = u.find((x) => x.id === prev.id);
+      if (!updated) return prev;
+      const nextUser = normalizeUser(updated);
+      if (nextUser) {
+        writeStoredUser(nextUser);
+        return nextUser;
+      }
+      return prev;
+    });
   };
 
   const handleLogin = () => {
@@ -354,7 +392,9 @@ export default function App() {
           setLoginError("비활성화된 계정입니다.");
           return;
         }
-        setCurrentUser(user);
+        const normalizedUser = normalizeUser(user);
+        setCurrentUser(normalizedUser);
+        writeStoredUser(normalizedUser);
         setLoginError("");
         setPage("dashboard");
       })
@@ -365,6 +405,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    writeStoredUser(null);
     setLoginId("");
     setLoginPw("");
     setPage("dashboard");
@@ -373,6 +414,14 @@ export default function App() {
   const isSuperAdmin = currentUser?.role === ROLES.SUPER_ADMIN;
   const isDirector = currentUser?.role === ROLES.DIRECTOR;
   const canManage = isSuperAdmin || isDirector;
+
+  if (!authReady) {
+    return (
+      <div style={{ ...styles.pageWrap, justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
+        <div style={{ fontSize: 16, color: "#6b7280" }}>로그인 상태를 확인하는 중입니다…</div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (
