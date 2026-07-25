@@ -3,7 +3,10 @@ import prisma from "../../../lib/prisma";
 // Sync holidays from Korean public data portal (공공데이터포털).
 // Requires service key in env `PUBLIC_HOLIDAY_API_KEY` or in request body { key }
 // This implementation fetches XML and extracts <locdate> (YYYYMMDD) and <dateName>.
-import fetch from 'node-fetch';
+// Use the global `fetch` available in modern Node versions (Node 18+).
+// Avoid a static import of `node-fetch` so Next.js build doesn't fail when
+// the package isn't installed in the environment. If `fetch` is not present
+// at runtime, the handler will return an error asking to install `node-fetch`.
 
 function parseHolidaysFromXml(xml) {
   const items = [];
