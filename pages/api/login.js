@@ -19,5 +19,8 @@ export default async function handler(req, res) {
   }
   // 보안상 password 필드는 제거
   const { password: _, ...safeUser } = user;
-  res.status(200).json(safeUser);
+  res.status(200).json({
+    ...safeUser,
+    remain: safeUser.manualRemain !== undefined && safeUser.manualRemain !== null ? Number(safeUser.manualRemain) : null,
+  });
 }
