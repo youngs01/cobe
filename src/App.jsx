@@ -330,7 +330,9 @@ export default function App() {
   const pendingCount = requests.filter((r) => r.status === STATUS.PENDING).length;
   const totalLeave = calcAnnualLeave(currentUser.hireDate);
   const usedLeave = calcApprovedLeaveForYear(myRequests, new Date().getFullYear());
-  const remainLeave = Math.max(0, totalLeave - usedLeave);
+  const remainLeave = currentUser.manualRemain !== undefined && currentUser.manualRemain !== null
+    ? currentUser.manualRemain
+    : Math.max(0, totalLeave - usedLeave);
 
   const navItems = [
     { id: "dashboard", label: "홈", icon: "home" },
@@ -1154,10 +1156,13 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
   const staffLeaveStats = staffUsers
     .map((u) => {
       const total = calcAnnualLeave(u.hireDate);
-      const remain = calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
+      const manualRemain = u.manualRemain !== undefined && u.manualRemain !== null ? u.manualRemain : null;
+      const remain = manualRemain !== null
+        ? manualRemain
+        : calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate);
       const used = calcApprovedLeaveForYear(requests.filter((r) => r.userId === u.id), new Date().getFullYear());
       const pending = requests.filter((r) => r.userId === u.id && r.status === STATUS.PENDING).reduce((acc, r) => acc + requestCost(r), 0);
-      return { ...u, total, used, pending, remain };
+      return { ...u, total, used, pending, remain, manualRemain };
     })
     .sort((a, b) => {
       const aIdx = roleOrderMap[a.role] ?? 99;
@@ -1688,7 +1693,11 @@ function AdminPage({ users, requests, setUsers, showToast, refresh }) {
                           </div>
                           <div style={styles.expandedRow}>
                             <span style={styles.expandedLabel}>잔여 연차</span>
-                            <span style={{ ...styles.expandedVal, color: "#10b981", fontWeight: 800 }}>{calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate)}일</span>
+                            <span style={{ ...styles.expandedVal, color: "#10b981", fontWeight: 800 }}>
+                              {(u.manualRemain !== undefined && u.manualRemain !== null)
+                                ? `${u.manualRemain}일 (수동)`
+                                : `${calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate)}일`}
+                            </span>
                           </div>
                           <div style={styles.expandedRow}>
                             <span style={styles.expandedLabel}>수동 잔여</span>
