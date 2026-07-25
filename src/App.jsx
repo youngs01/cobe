@@ -1334,7 +1334,7 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
                           </span>
                         </div>
                         <p style={{ margin: 0, fontSize: 12, color: "#9ca3af" }}>
-                          {u.classRoom || formatDate(u.hireDate)} · {calcYearLabel(u.hireDate)}
+                          {formatDate(u.hireDate)}{u.classRoom ? ` · ${u.classRoom}` : ""} · {calcYearLabel(u.hireDate)}
                         </p>
                       </div>
                     </div>
