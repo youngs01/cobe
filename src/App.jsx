@@ -284,8 +284,8 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
 export default function App() {
   const [users, setUsers] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [page, setPage] = useState("dashboard");
+  const [currentUser, setCurrentUser] = useState(() => readStoredUser());
+  const [page, setPage] = useState(() => (readStoredUser() ? "dashboard" : "dashboard"));
   const [loginId, setLoginId] = useState("");
   const [loginPw, setLoginPw] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -298,14 +298,6 @@ export default function App() {
       setUsers(u);
       setRequests(r);
     })();
-  }, []);
-
-  useEffect(() => {
-    const restoredUser = readStoredUser();
-    if (restoredUser) {
-      setCurrentUser(restoredUser);
-      setPage("dashboard");
-    }
   }, []);
 
   useEffect(() => {
