@@ -41,6 +41,30 @@ const STATUS_COLOR = {
   취소됨: "#6b7280",
 };
 
+const SESSION_STORAGE_KEY = "cobe-leave-current-user";
+
+function readStoredUser() {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (err) {
+    console.error("readStoredUser failed", err);
+    return null;
+  }
+}
+
+function writeStoredUser(user) {
+  if (typeof window === "undefined") return;
+  if (!user) {
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+}
+
 // ─── 연차 계산 로직 (고용노동부 기준) ──────────────────────────────────────
 
 function calcAnnualLeave(hireDate, asOfDate = new Date()) {
@@ -275,6 +299,18 @@ export default function App() {
       setRequests(r);
     })();
   }, []);
+
+  useEffect(() => {
+    const restoredUser = readStoredUser();
+    if (restoredUser) {
+      setCurrentUser(restoredUser);
+      setPage("dashboard");
+    }
+  }, []);
+
+  useEffect(() => {
+    writeStoredUser(currentUser);
+  }, [currentUser]);
 
   // load holidays from server (Naver Calendar source planned)
   const [, setHolidayLoaded] = useState(false);
