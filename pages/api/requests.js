@@ -1,23 +1,153 @@
 import prisma from "../../lib/prisma";
 
+let SERVER_HOLIDAYS = [];
+function getServerHolidays(year) {
+  const prefix = String(year) + "-";
+  return SERVER_HOLIDAYS.filter((d) => d.startsWith(prefix));
+}
+
+function getDayInfo(date) {
+  const day = new Date(date).getDay();
+  return { isWeekend: day === 0 || day === 6 };
+}
+
+function requestCost(r, holidays = []) {
+  if (r.halfDay) return 0.5;
+  const start = r.startDate ? new Date(r.startDate) : (r.date ? new Date(r.date) : null);
+  const end = r.endDate ? new Date(r.endDate) : (r.date ? new Date(r.date) : null);
+  if (start && end) {
+    let count = 0;
+    let d = new Date(start);
+    while (d <= end) {
+      const yyyyMMdd = d.toISOString().slice(0, 10);
+      const info = getDayInfo(d);
+      if (!info.isWeekend && !holidays.includes(yyyyMMdd)) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  }
+  const singleDate = r.date || r.startDate;
+  if (singleDate) {
+    const d = new Date(singleDate);
+    const yyyyMMdd = d.toISOString().slice(0, 10);
+    const info = getDayInfo(d);
+    return !info.isWeekend && !holidays.includes(yyyyMMdd) ? 1 : 0;
+  }
+  return 1;
+}
+
+function calcAnnualLeave(hireDate, asOfDate = new Date()) {
+  const hire = new Date(hireDate);
+  const today = new Date(asOfDate);
+  const diffMs = today - hire;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor(diffDays / 30);
+
+  if (years < 1) {
+    return Math.min(months, 11);
+  } else {
+    const extra = Math.floor((years - 1) / 2);
+    return Math.min(15 + extra, 25);
+  }
+}
+
+function getLeaveYearStart(hireDate, refDate = new Date()) {
+  const hire = new Date(hireDate);
+  const now = new Date(refDate);
+  const start = new Date(hire);
+  start.setFullYear(now.getFullYear());
+  start.setHours(0, 0, 0, 0);
+  if (start > now) {
+    start.setFullYear(now.getFullYear() - 1);
+  }
+  return start;
+}
+
+function getLeaveYearRanges(hireDate, refDate = new Date()) {
+  const currentStart = getLeaveYearStart(hireDate, refDate);
+  const lastStart = new Date(currentStart);
+  lastStart.setFullYear(currentStart.getFullYear() - 1);
+  const nextStart = new Date(currentStart);
+  nextStart.setFullYear(currentStart.getFullYear() + 1);
+  return { lastStart, currentStart, nextStart };
+}
+
+function isRequestInRange(r, start, end) {
+  const reqDate = r.date || r.startDate;
+  if (!reqDate) return false;
+  const d = new Date(reqDate);
+  return d >= start && d < end;
+}
+
+function calcApprovedLeaveForLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { currentStart, nextStart } = getLeaveYearRanges(hireDate, refDate);
+  const holidays = getServerHolidays(currentStart.getFullYear());
+  return requests
+    .filter((r) => r.status === "승인")
+    .filter((r) => isRequestInRange(r, currentStart, nextStart))
+    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+}
+
+function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { lastStart, currentStart } = getLeaveYearRanges(hireDate, refDate);
+  const holidays = getServerHolidays(lastStart.getFullYear());
+  return requests
+    .filter((r) => r.status === "승인")
+    .filter((r) => isRequestInRange(r, lastStart, currentStart))
+    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+}
+
+function calcRemainingLeaveWithCarryover(requests, hireDate) {
+  const { lastStart, currentStart } = getLeaveYearRanges(hireDate, new Date());
+  const lastYearTotal = calcAnnualLeave(hireDate, lastStart);
+  const lastYearUsed = calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date());
+  const lastYearRemain = lastYearTotal - lastYearUsed;
+  const currentYearTotal = calcAnnualLeave(hireDate, currentStart);
+  const adjustedTotal = currentYearTotal + lastYearRemain;
+  const currentYearUsed = calcApprovedLeaveForLeaveYear(requests, hireDate, new Date());
+  return Math.max(0, adjustedTotal - currentYearUsed);
+}
+
+async function syncUserRemainingLeave(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+
+  const requests = await prisma.request.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
+  const approvedRequests = requests.filter((r) => r.status === "승인");
+  const newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
+
+  console.log("[syncUserRemainingLeave]", { userId, existingManualRemain: user.manualRemain, newRemain, approvedCount: approvedRequests.length });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { manualRemain: newRemain },
+  });
+
+  return newRemain;
+}
+
 export default async function handler(req, res) {
   try {
+    try {
+      const items = await prisma.holiday.findMany();
+      SERVER_HOLIDAYS = items.map((h) => h.date.toISOString().slice(0, 10));
+    } catch (e) {
+      SERVER_HOLIDAYS = [];
+    }
+
     if (req.method === "GET") {
       const calls = await prisma.request.findMany();
       res.status(200).json(calls);
     } else if (req.method === "POST") {
       const { userId, type, reason, status, date, startDate, endDate, halfDay } = req.body;
       console.log("[/api/requests POST] received:", { userId, type, reason, status, date, startDate, endDate, halfDay });
-      
-      // validate required fields
       if (!userId) return res.status(400).json({ error: "userId required" });
       if (!type) return res.status(400).json({ error: "type required" });
       if (!reason) return res.status(400).json({ error: "reason required" });
       if (!status) return res.status(400).json({ error: "status required" });
-      
-      // build data based on type
+
       let data = { userId, type, reason, status };
-      
       if (type === "연차") {
         if (!startDate) return res.status(400).json({ error: "startDate required for 연차" });
         if (!endDate) return res.status(400).json({ error: "endDate required for 연차" });
@@ -35,11 +165,11 @@ export default async function handler(req, res) {
       } else {
         return res.status(400).json({ error: "type must be 연차 or 반차" });
       }
-      
+
       console.log("[/api/requests POST] final data:", JSON.stringify(data, null, 2));
-      
       try {
         const r = await prisma.request.create({ data });
+        await syncUserRemainingLeave(userId);
         console.log("[/api/requests POST] created:", r);
         res.status(201).json(r);
       } catch (createErr) {
@@ -49,16 +179,29 @@ export default async function handler(req, res) {
     } else if (req.method === "PATCH") {
       const { id } = req.query;
       const updates = { ...req.body };
-      // Convert date/startDate/endDate/approvedAt to DateTime if provided
+      const oldReq = await prisma.request.findUnique({ where: { id } });
+      if (!oldReq) return res.status(404).json({ error: "Request not found" });
+      const oldStatus = oldReq.status;
+      const newStatus = updates.status ?? oldStatus;
+      const statusChanged = newStatus !== oldStatus;
+
       if (updates.date && typeof updates.date === "string") updates.date = new Date(updates.date);
       if (updates.startDate && typeof updates.startDate === "string") updates.startDate = new Date(updates.startDate);
       if (updates.endDate && typeof updates.endDate === "string") updates.endDate = new Date(updates.endDate);
       if (updates.approvedAt && typeof updates.approvedAt === "string") updates.approvedAt = new Date(updates.approvedAt);
+
+      console.log("[/api/requests PATCH] status transition", { id, oldStatus, newStatus, statusChanged });
       const r = await prisma.request.update({ where: { id }, data: updates });
+      await syncUserRemainingLeave(oldReq.userId);
+
       res.status(200).json(r);
     } else if (req.method === "DELETE") {
       const { id } = req.query;
+      const existing = await prisma.request.findUnique({ where: { id } });
       await prisma.request.delete({ where: { id } });
+      if (existing) {
+        await syncUserRemainingLeave(existing.userId);
+      }
       res.status(204).end();
     } else {
       res.setHeader("Allow", ["GET", "POST", "PATCH", "DELETE"]);

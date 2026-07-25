@@ -1,26 +1,19 @@
 import prisma from "../../lib/prisma";
 import bcrypt from "bcryptjs";
 
-const HOLIDAYS = [
-  "2026-01-01",
-  "2026-02-18", "2026-02-19", "2026-02-20",
-  "2026-03-01",
-  "2026-05-05",
-  "2026-05-15",
-  "2026-06-06",
-  "2026-08-15",
-  "2026-09-23", "2026-09-24", "2026-09-25",
-  "2026-10-03",
-  "2026-10-09",
-  "2026-12-25",
-];
+// server-loaded holidays (yyyy-mm-dd strings) populated per request
+let SERVER_HOLIDAYS = [];
+function getServerHolidays(year) {
+  const prefix = String(year) + "-";
+  return SERVER_HOLIDAYS.filter(d => d.startsWith(prefix));
+}
 
 function getDayInfo(date) {
   const day = new Date(date).getDay();
   return { isWeekend: day === 0 || day === 6 };
 }
 
-function requestCost(r) {
+function requestCost(r, holidays = []) {
   if (r.halfDay) return 0.5;
   const start = r.startDate ? new Date(r.startDate) : (r.date ? new Date(r.date) : null);
   const end = r.endDate ? new Date(r.endDate) : (r.date ? new Date(r.date) : null);
@@ -30,7 +23,7 @@ function requestCost(r) {
     while (d <= end) {
       const yyyyMMdd = d.toISOString().slice(0, 10);
       const info = getDayInfo(d);
-      if (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) count++;
+      if (!info.isWeekend && !holidays.includes(yyyyMMdd)) count++;
       d.setDate(d.getDate() + 1);
     }
     return count;
@@ -40,55 +33,111 @@ function requestCost(r) {
     const d = new Date(singleDate);
     const yyyyMMdd = d.toISOString().slice(0, 10);
     const info = getDayInfo(d);
-    return (!info.isWeekend && !HOLIDAYS.includes(yyyyMMdd)) ? 1 : 0;
+    return (!info.isWeekend && !holidays.includes(yyyyMMdd)) ? 1 : 0;
   }
   return 1;
 }
 
-function calcRemainingLeaveWithCarryover(requests, hireDate) {
+function calcAnnualLeave(hireDate, asOfDate = new Date()) {
   const hire = new Date(hireDate);
-  const currentYear = hire.getFullYear() + Math.floor((new Date().getFullYear() - hire.getFullYear()));
-  const lastYear = currentYear - 1;
-  
-  // 작년 총 연차 계산
-  const lastYearHire = new Date(hire);
-  lastYearHire.setFullYear(lastYear);
-  const lastYearTotal = calcAnnualLeave(lastYearHire);
-  
-  // 작년 사용 연차
-  const lastYearUsed = requests
+  const today = new Date(asOfDate);
+  const diffMs = today - hire;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor(diffDays / 30);
+
+  if (years < 1) {
+    return Math.min(months, 11);
+  } else {
+    const extra = Math.floor((years - 1) / 2);
+    return Math.min(15 + extra, 25);
+  }
+}
+
+function getLeaveYearStart(hireDate, refDate = new Date()) {
+  const hire = new Date(hireDate);
+  const now = new Date(refDate);
+  const start = new Date(hire);
+  start.setFullYear(now.getFullYear());
+  start.setHours(0, 0, 0, 0);
+  if (start > now) {
+    start.setFullYear(now.getFullYear() - 1);
+  }
+  return start;
+}
+
+function getLeaveYearRanges(hireDate, refDate = new Date()) {
+  const currentStart = getLeaveYearStart(hireDate, refDate);
+  const lastStart = new Date(currentStart);
+  lastStart.setFullYear(currentStart.getFullYear() - 1);
+  const nextStart = new Date(currentStart);
+  nextStart.setFullYear(currentStart.getFullYear() + 1);
+  return { lastStart, currentStart, nextStart };
+}
+
+function isRequestInRange(r, start, end) {
+  const reqDate = r.date || r.startDate;
+  if (!reqDate) return false;
+  const d = new Date(reqDate);
+  return d >= start && d < end;
+}
+
+function calcApprovedLeaveForLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { currentStart, nextStart } = getLeaveYearRanges(hireDate, refDate);
+  const holidays = getServerHolidays(currentStart.getFullYear());
+  return requests
     .filter((r) => r.status === "승인")
-    .filter((r) => {
-      const reqDate = r.date || r.startDate;
-      if (!reqDate) return false;
-      const reqYear = new Date(reqDate).getFullYear();
-      return reqYear === lastYear;
-    })
-    .reduce((acc, r) => acc + requestCost(r), 0);
-    
-  // 작년 남은 연차 (이월될 값)
+    .filter((r) => isRequestInRange(r, currentStart, nextStart))
+    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+}
+
+function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new Date()) {
+  const { lastStart, currentStart } = getLeaveYearRanges(hireDate, refDate);
+  const holidays = getServerHolidays(lastStart.getFullYear());
+  return requests
+    .filter((r) => r.status === "승인")
+    .filter((r) => isRequestInRange(r, lastStart, currentStart))
+    .reduce((acc, r) => acc + requestCost(r, holidays), 0);
+}
+
+function calcRemainingLeaveWithCarryover(requests, hireDate) {
+  const { lastStart, currentStart } = getLeaveYearRanges(hireDate, new Date());
+
+  const lastYearTotal = calcAnnualLeave(hireDate, lastStart);
+  const lastYearUsed = calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, new Date());
   const lastYearRemain = lastYearTotal - lastYearUsed;
-  
-  // 올해 총 연차 + 작년 이월
-  const currentYearTotal = calcAnnualLeave(hireDate);
+
+  const currentYearTotal = calcAnnualLeave(hireDate, currentStart);
   const adjustedTotal = currentYearTotal + lastYearRemain;
-  
-  // 올해 사용 연차
-  const currentYearUsed = requests
-    .filter((r) => r.status === "승인")
-    .filter((r) => {
-      const reqDate = r.date || r.startDate;
-      if (!reqDate) return false;
-      const reqYear = new Date(reqDate).getFullYear();
-      return reqYear === currentYear;
-    })
-    .reduce((acc, r) => acc + requestCost(r), 0);
-    
+  const currentYearUsed = calcApprovedLeaveForLeaveYear(requests, hireDate, new Date());
+
   return Math.max(0, adjustedTotal - currentYearUsed);
+}
+
+async function syncUserRemainingLeave(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+
+  const requests = await prisma.request.findMany({ where: { userId, status: "승인" }, orderBy: { createdAt: "asc" } });
+  const newRemain = calcRemainingLeaveWithCarryover(requests, user.hireDate);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { manualRemain: newRemain },
+  });
+
+  return newRemain;
 }
 
 export default async function handler(req, res) {
   try {
+    // load holidays from DB for this request
+    try {
+      const items = await prisma.holiday.findMany();
+      SERVER_HOLIDAYS = items.map(h => h.date.toISOString().slice(0,10));
+    } catch (e) {
+      SERVER_HOLIDAYS = [];
+    }
     if (req.method === "GET") {
       let users = await prisma.user.findMany();
       if (users.length === 0) {
@@ -130,41 +179,24 @@ export default async function handler(req, res) {
       await prisma.user.delete({ where: { id } });
       res.status(204).end();
     } else if (req.method === "PATCH") {
-      // update a single user (e.g. manualRemain)
       const { id } = req.query;
       const updates = { ...req.body };
-      // password 해시
       if (updates.password) {
         updates.password = await bcrypt.hash(updates.password, 10);
       }
-      // if client sends manualRemain as string, convert to number
       if (updates.manualRemain !== undefined && updates.manualRemain !== null) {
         const v = parseFloat(updates.manualRemain);
         updates.manualRemain = Number.isFinite(v) ? v : null;
       }
       const u = await prisma.user.update({ where: { id }, data: updates });
+      if (updates.manualRemain !== undefined) {
+        await syncUserRemainingLeave(id);
+      }
       res.status(200).json({ ...u });
     } else if (req.method === "PUT") {
       // bulk operations. currently supports { action: 'applySystem' }
       const body = req.body || {};
       if (body.action === "applySystem") {
-        // helper to compute annual leave (same rules as frontend)
-        function calcAnnualLeave(hireDate) {
-          const hire = new Date(hireDate);
-          const today = new Date();
-          const diffMs = today - hire;
-          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-          const years = Math.floor(diffDays / 365);
-          const months = Math.floor(diffDays / 30);
-
-          if (years < 1) {
-            return Math.min(months, 11);
-          } else {
-            const extra = Math.floor((years - 1) / 2);
-            return Math.min(15 + extra, 25);
-          }
-        }
-
         const staff = await prisma.user.findMany({ where: { role: { not: "최종관리자" }, active: true } });
         const allRequests = await prisma.request.findMany({ where: { status: "승인" } });
         // calculate remaining leave with carryover for each user
