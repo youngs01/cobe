@@ -27,11 +27,6 @@
     "lint": "next lint",
     "postinstall": "prisma generate"
   },
-  "eslintConfig": {
-    "extends": [
-      "next/core-web-vitals"
-    ]
-  },
   "browserslist": {
     "production": [
       ">0.2%",
