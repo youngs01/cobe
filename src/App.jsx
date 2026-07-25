@@ -107,7 +107,8 @@ function calcApprovedLeaveForPreviousLeaveYear(requests, hireDate, refDate = new
 
 function calcEffectiveRemainingLeave(requests, hireDate, manualRemain) {
   if (manualRemain !== undefined && manualRemain !== null) {
-    return Math.max(0, Number(manualRemain));
+    const approvedUsed = calcApprovedLeaveForLeaveYear(requests, hireDate);
+    return Math.max(0, Number(manualRemain) - approvedUsed);
   }
   return calcRemainingLeaveWithCarryover(requests, hireDate);
 }
@@ -1907,9 +1908,7 @@ function AdminPage({ users, requests, setUsers, showToast, refresh }) {
                           <div style={styles.expandedRow}>
                             <span style={styles.expandedLabel}>잔여 연차</span>
                             <span style={{ ...styles.expandedVal, color: "#10b981", fontWeight: 800 }}>
-                              {(u.manualRemain !== undefined && u.manualRemain !== null)
-                                ? `${u.manualRemain}일 (수동)`
-                                : `${calcRemainingLeaveWithCarryover(requests.filter((r) => r.userId === u.id), u.hireDate)}일`}
+                              {u.remain < 0 ? `-${Math.abs(u.remain)}일` : `${u.remain}일`}
                             </span>
                           </div>
                           <div style={styles.expandedRow}>
