@@ -176,10 +176,24 @@ export default async function handler(req, res) {
       if (statusChanged && (oldStatus === "승인" || newStatus === "승인")) {
         const user = await prisma.user.findUnique({ where: { id: oldReq.userId } });
         if (user) {
-          const approvedRequests = await prisma.request.findMany({
-            where: { userId: user.id, status: "승인" },
-          });
-          const newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
+          const requestYear = oldReq.startDate?.getFullYear() ?? oldReq.date?.getFullYear() ?? new Date().getFullYear();
+          const cost = requestCost(oldReq, getServerHolidays(requestYear));
+          let newRemain;
+
+          if (user.manualRemain !== undefined && user.manualRemain !== null) {
+            newRemain = user.manualRemain;
+            if (oldStatus !== "승인" && newStatus === "승인") {
+              newRemain = Math.max(0, newRemain - cost);
+            } else if (oldStatus === "승인" && newStatus !== "승인") {
+              newRemain = newRemain + cost;
+            }
+          } else {
+            const approvedRequests = await prisma.request.findMany({
+              where: { userId: user.id, status: "승인" },
+            });
+            newRemain = calcRemainingLeaveWithCarryover(approvedRequests, user.hireDate);
+          }
+
           await prisma.user.update({
             where: { id: user.id },
             data: { manualRemain: newRemain },
