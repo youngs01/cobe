@@ -153,6 +153,13 @@ function calcEffectiveRemainingLeave(requests, hireDate, manualRemain) {
   return Math.max(0, calcRemainingLeaveFromRequests(requests, hireDate));
 }
 
+function buildUserWithRemain(user, remain) {
+  if (!user || typeof user !== "object") return null;
+  const next = normalizeUser(user);
+  if (!next) return null;
+  return normalizeUser({ ...next, manualRemain: remain, remain });
+}
+
 async function fetchUsers() {
   const res = await fetch("/api/users");
   if (!res.ok) throw new Error("users failed");
@@ -261,8 +268,11 @@ function App() {
       });
       const payload = await res.json();
       if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
-        setCurrentUser((prev) => normalizeUser(prev ? { ...prev, manualRemain: payload.remain, remain: payload.remain } : null));
-        writeSession(normalizeUser(currentUser ? { ...currentUser, manualRemain: payload.remain, remain: payload.remain } : null));
+        const nextUser = buildUserWithRemain(currentUser, payload.remain);
+        if (nextUser) {
+          setCurrentUser(nextUser);
+          writeSession(nextUser);
+        }
       }
       await refresh();
       setToast("승인되었습니다.");
@@ -283,8 +293,11 @@ function App() {
       });
       const payload = await res.json();
       if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
-        setCurrentUser((prev) => normalizeUser(prev ? { ...prev, manualRemain: payload.remain, remain: payload.remain } : null));
-        writeSession(normalizeUser(currentUser ? { ...currentUser, manualRemain: payload.remain, remain: payload.remain } : null));
+        const nextUser = buildUserWithRemain(currentUser, payload.remain);
+        if (nextUser) {
+          setCurrentUser(nextUser);
+          writeSession(nextUser);
+        }
       }
       await refresh();
       setToast("승인 취소되었습니다.");
