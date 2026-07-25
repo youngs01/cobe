@@ -1390,6 +1390,14 @@ function ManagePage({ currentUser, isSuperAdmin, users, requests, setRequests, s
         >
           직원 연차 현황
         </button>
+        {isSuperAdmin && (
+          <button
+            style={{ ...styles.tabBtn, ...(tab === "holidays" ? styles.tabBtnActive : {}) }}
+            onClick={() => setTab("holidays")}
+          >
+            휴일 관리
+          </button>
+        )}
       </div>
 
       {/* ── 탭 1: 연차 신청 관리 ── */}
