@@ -281,6 +281,9 @@ function App() {
         body: JSON.stringify({ status: STATUS.APPROVED, approvedBy: currentUser?.id, approvedAt: new Date().toISOString().slice(0, 10) }),
       });
       const payload = await res.json();
+      if (payload.remain !== undefined && payload.remain !== null) {
+        setDisplayRemain(payload.remain);
+      }
       if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
         const nextUser = buildUserWithRemain(currentUser, payload.remain);
         if (nextUser) {
@@ -306,6 +309,9 @@ function App() {
         body: JSON.stringify({ status: STATUS.CANCELLED, approvedBy: null, approvedAt: null }),
       });
       const payload = await res.json();
+      if (payload.remain !== undefined && payload.remain !== null) {
+        setDisplayRemain(payload.remain);
+      }
       if (currentUser?.id === payload.userId && payload.remain !== undefined && payload.remain !== null) {
         const nextUser = buildUserWithRemain(currentUser, payload.remain);
         if (nextUser) {
